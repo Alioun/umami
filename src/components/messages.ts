@@ -552,5 +552,7 @@ export const messages: Record<string, string> = {
   noApiKeys: 'message.no-api-keys',
   externalAccountDescription: 'message.external-account-description',
   externalLoginFailed: 'message.external-login-failed',
+  externalAccountExists: 'message.external-account-exists',
+  externalSignupDisabled: 'message.external-signup-disabled',
   externalLinkFailed: 'message.external-link-failed',
 };

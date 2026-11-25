@@ -552,6 +552,8 @@
     "no-api-keys": "You have not created any API keys.",
     "external-account-description": "A linked {name} account can be used to sign in.",
     "external-login-failed": "Sign-in with {name} failed.",
+    "external-account-exists": "An Umami account already exists for this {name} user. Sign in with your password, then link your {name} account in Settings under Security.",
+    "external-signup-disabled": "No Umami account is linked to this {name} user. Ask an administrator for access, or sign in with your password and link the account in Settings under Security.",
     "external-link-failed": "The {name} account could not be linked."
   },
   "errorTracking": {

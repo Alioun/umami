@@ -59,6 +59,10 @@ function createAuth() {
     // src/app/api/auth/[...all]/route.ts).
     basePath: `${process.env.basePath || ''}/api/auth`,
     trustedOrigins: [process.env.CLOUD_URL].filter(Boolean),
+    // A provider sign-in that fails before better-auth knows where to send the user, such as one
+    // with an expired state, lands on the login page with its error code instead of better-auth's
+    // own error page.
+    onAPIError: { errorURL: `${process.env.basePath || ''}/login` },
     database: prismaAdapter(prisma.client, { provider: 'postgresql' }),
     emailAndPassword: {
       enabled: true,
