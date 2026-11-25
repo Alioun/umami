@@ -44,6 +44,10 @@ async function submitIdpForm(page: Page, subject: string, claims: Claims) {
   await page.getByRole('button', { name: 'Sign-in' }).click();
 }
 
+function isIdpRequest(url: string) {
+  return url.startsWith(`http://${IDP_HOST}:`);
+}
+
 async function currentUser(page: Page) {
   const response = await page.request.get('/api/me');
 
@@ -91,7 +95,19 @@ test.describe
       await signInWithIdp(page, subject, claims);
       expect((await currentUser(page)).id).toBe(userId);
 
+      // Logout passes through the provider's end-session endpoint, which returns to the login page.
+      const endSession = page.waitForRequest(
+        request =>
+          isIdpRequest(request.url()) && new URL(request.url()).pathname.endsWith('/endsession'),
+      );
       await logout(page);
+
+      const params = new URL((await endSession).url()).searchParams;
+
+      expect(params.get('id_token_hint')).toBeTruthy();
+      expect(params.get('client_id')).toBe('umami');
+      expect(params.get('post_logout_redirect_uri')).toMatch(/^http:\/\/localhost:\d+\/login$/);
+      expect((await page.request.get('/api/me')).status()).toBe(401);
 
       await signInWithIdp(page, subject, claims);
       expect((await currentUser(page)).id).toBe(userId);
@@ -119,7 +135,17 @@ test('signs a local user in through the IdP account they linked', async ({ page,
   await expect(page).toHaveURL(/\/settings\/security$/);
   await expect(page.getByTestId('button-unlink-account')).toBeVisible();
 
+  // This session began with the password, so logout leaves the provider session alone, even
+  // though the user now has a linked account.
+  const idpRequests: string[] = [];
+  page.on('request', request => {
+    if (isIdpRequest(request.url())) {
+      idpRequests.push(request.url());
+    }
+  });
   await logout(page);
+  expect(idpRequests).toEqual([]);
+  page.removeAllListeners('request');
 
   await signInWithIdp(page, linkedSubject, linkedClaims);
   expect((await currentUser(page)).id).toBe(localUser.id);
