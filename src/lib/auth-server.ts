@@ -1,12 +1,12 @@
 import { type BetterAuthPlugin, betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { bearer, genericOAuth, username } from 'better-auth/plugins';
+import { getForcedSecureCookies, withSecureCookies } from '@/lib/auth-cookies';
 import { ssoToken } from '@/lib/auth-plugins/sso-token';
 import { twoFactorChallenge } from '@/lib/auth-plugins/two-factor-challenge';
 import { umamiSession } from '@/lib/auth-plugins/umami-session';
 import { AUTH_SESSION_TTL, OIDC_PROVIDER_ID, ROLES } from '@/lib/constants';
 import { secret, uuid } from '@/lib/crypto';
-import { parseBooleanEnv } from '@/lib/env';
 import { getOidcConfig, isOidcConfigured } from '@/lib/oidc';
 import { checkPassword, hashPassword } from '@/lib/password';
 import prisma from '@/lib/prisma';
@@ -148,11 +148,9 @@ function createAuth() {
       // Detect https correctly behind a reverse proxy.
       trustedProxyHeaders: true,
       // better-auth marks cookies Secure whenever NODE_ENV is production, which
-      // breaks self-hosted installs served over plain http. Opt in with
-      // COOKIE_SECURE=1; the default follows CLOUD_URL.
-      useSecureCookies:
-        parseBooleanEnv(process.env.COOKIE_SECURE) ??
-        (process.env.CLOUD_URL || '').startsWith('https://'),
+      // breaks self-hosted installs served over plain http. Unless COOKIE_SECURE or
+      // CLOUD_URL decides, withSecureCookies follows the protocol of each request.
+      useSecureCookies: getForcedSecureCookies() ?? false,
     },
     plugins: [
       // The casts work around plugin types that need strictNullChecks, which
@@ -234,7 +232,7 @@ export async function createUserSession(request: Request, userId: string) {
     returnHeaders: true,
   });
 
-  return { token: response.token as string, headers };
+  return { token: response.token as string, headers: withSecureCookies(request, headers) };
 }
 
 /**
@@ -247,7 +245,7 @@ export async function refreshUserSession(request: Request) {
     returnHeaders: true,
   });
 
-  return headers;
+  return withSecureCookies(request, headers);
 }
 
 /** Ends the session of the request. Returns the headers that clear the cookie. */
@@ -257,5 +255,5 @@ export async function endUserSession(request: Request) {
     returnHeaders: true,
   });
 
-  return headers;
+  return withSecureCookies(request, headers);
 }

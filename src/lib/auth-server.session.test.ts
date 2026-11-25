@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { checkAuth } from '@/lib/auth';
 import { AUTH_SESSION_TTL } from '@/lib/constants';
 import { createUserSession, getAuth, refreshUserSession } from './auth-server';
@@ -40,6 +40,10 @@ const DAY = 24 * 60 * 60 * 1000;
 
 let userId: string;
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 beforeEach(async () => {
   for (const rows of Object.values(db)) {
     rows.length = 0;
@@ -61,11 +65,11 @@ function sessionCookie(headers: Headers) {
   return headers.getSetCookie().find(cookie => cookie.includes('.session_token='));
 }
 
-async function signIn(url = 'http://localhost/api/auth/login') {
-  const { token, headers } = await createUserSession(new Request(url, { method: 'POST' }), userId);
-  const cookie = sessionCookie(headers).split(';')[0];
+async function signIn(init: RequestInit = {}, create = createUserSession) {
+  const request = new Request('http://localhost/api/auth/login', { method: 'POST', ...init });
+  const { token, headers } = await create(request, userId);
 
-  return { token, cookie };
+  return { token, cookie: sessionCookie(headers).split(';')[0], setCookie: sessionCookie(headers) };
 }
 
 async function setExpiry(token: string, expiresAt: Date) {
@@ -127,5 +131,36 @@ test('a bearer token session is extended and keeps its token', async () => {
   );
 
   expect(await storedExpiry(token)).toBeGreaterThan(Date.now() + AUTH_SESSION_TTL * 1000 - DAY);
+  expect(auth.user.id).toBe(userId);
+});
+
+test('a session started behind a TLS-terminating proxy gets a Secure cookie', async () => {
+  const { cookie, setCookie } = await signIn({ headers: { 'x-forwarded-proto': 'https' } });
+  const auth = await checkAuth(new Request('http://localhost/api/me', { headers: { cookie } }));
+
+  expect(setCookie).toMatch(/^umami\.session_token=.*; Secure$/);
+  expect(auth.user.id).toBe(userId);
+});
+
+test('a session started over plain http gets a cookie without Secure', async () => {
+  const { setCookie } = await signIn();
+
+  expect(setCookie).toMatch(/^umami\.session_token=/);
+  expect(setCookie).not.toMatch(/secure/i);
+});
+
+test('COOKIE_SECURE=1 sets a __Secure- cookie and reads it back', async () => {
+  vi.stubEnv('COOKIE_SECURE', '1');
+  vi.resetModules();
+  delete globalThis['better-auth-instance'];
+
+  const server = await import('./auth-server');
+  const { checkAuth: check } = await import('@/lib/auth');
+  const { cookie, setCookie } = await signIn({}, server.createUserSession);
+  const auth = await check(new Request('http://localhost/api/me', { headers: { cookie } }));
+
+  delete globalThis['better-auth-instance'];
+
+  expect(setCookie).toMatch(/^__Secure-umami\.session_token=.*; Secure/);
   expect(auth.user.id).toBe(userId);
 });
