@@ -290,15 +290,25 @@ async function getProviderLogoutUrl(request: Request, userId: string, providerId
   const account = (await ctx.internalAdapter.findAccounts(userId)).find(
     account => account.providerId === providerId,
   );
-  // The provider matches this URL against the ones registered for the client, so its origin is
-  // resolved like the one in the sign-in redirect URI.
-  const origin = getBaseURL(undefined, '/', request, undefined, true);
-  const url = await provider?.createEndSessionURL?.({
-    idToken: account?.idToken,
-    postLogoutRedirectURI: new URL(`${process.env.basePath || ''}/login`, origin).toString(),
-  });
+  const url = await provider?.createEndSessionURL?.({ idToken: account?.idToken });
 
-  return url?.toString();
+  if (!url) {
+    return undefined;
+  }
+
+  // better-auth resolves a postLogoutRedirectURI against its configured base URL. Umami sets
+  // none, because the origin comes from each request, and new URL() rejects the empty base. So
+  // the return address is added here. The provider matches it against the ones registered for
+  // the client, so its origin is resolved like the one in the sign-in redirect URI.
+  const origin = getBaseURL(undefined, '/', request, undefined, true);
+
+  url.searchParams.set(
+    'post_logout_redirect_uri',
+    new URL(`${process.env.basePath || ''}/login`, origin).toString(),
+  );
+  url.searchParams.set('client_id', getOidcConfig().clientId);
+
+  return url.toString();
 }
 
 /**
@@ -311,18 +321,20 @@ export async function endUserSession(request: Request) {
     headers: request.headers,
     query: { disableRefresh: true },
   });
-  const providerId = current?.session.providerId;
-  const redirect = providerId
-    ? await getProviderLogoutUrl(request, current.user.id, providerId)
-    : undefined;
 
   // better-auth would pick the provider from the user's most recently updated account instead
   // of the session, and answer with a Location header, so its own provider logout is not used.
+  // The Umami session ends first, so a failure at the provider step cannot keep the user signed in.
   const { headers } = await auth.api.signOut({
     headers: request.headers,
     body: { disableRedirect: true },
     returnHeaders: true,
   });
+
+  const providerId = current?.session.providerId;
+  const redirect = providerId
+    ? await getProviderLogoutUrl(request, current.user.id, providerId)
+    : undefined;
 
   return { headers: withSecureCookies(request, headers), redirect };
 }

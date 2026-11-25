@@ -1,5 +1,5 @@
 import { memoryAdapter } from 'better-auth/adapters/memory';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const ORIGIN = 'http://localhost:3000';
 
@@ -186,6 +186,16 @@ describe('provider sign-in errors', () => {
 
 describe('logout', () => {
   const profile = { sub: 'subject-4', preferred_username: 'dave', email: 'dave@example.com' };
+
+  // Without a configured base URL, better-auth falls back to window.location, which exists only
+  // under jsdom. On the server it has no base URL at all.
+  beforeEach(() => {
+    vi.stubGlobal('window', undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
   function logoutRequest(cookie: string, headers: Record<string, string> = {}) {
     return new Request(`${ORIGIN}/api/auth/logout`, {
