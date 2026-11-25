@@ -7,6 +7,7 @@ import { twoFactorChallenge } from '@/lib/auth-plugins/two-factor-challenge';
 import { umamiSession } from '@/lib/auth-plugins/umami-session';
 import { AUTH_SESSION_TTL, OIDC_PROVIDER_ID, ROLES } from '@/lib/constants';
 import { secret, uuid } from '@/lib/crypto';
+import { getIpAddress, stripPort } from '@/lib/ip';
 import { getOidcConfig, isOidcConfigured } from '@/lib/oidc';
 import { checkPassword, hashPassword } from '@/lib/password';
 import prisma from '@/lib/prisma';
@@ -15,6 +16,26 @@ import { isTwoFactorSetupRequired } from '@/lib/two-factor/policy';
 
 const BETTER_AUTH = 'better-auth-instance';
 const REDIS_PREFIX = 'ba:';
+
+// better-auth reads the client address only from a single-value X-Forwarded-For, and counts
+// every request with a proxy chain in one shared rate-limit bucket. Umami resolves the address
+// itself (CLIENT_IP_HEADER, TRUSTED_PROXIES, proxy chains) and passes it on in this header, which
+// only the server sets.
+const CLIENT_IP_HEADER = 'x-umami-auth-client-ip';
+
+/** Copies request headers for better-auth, with the client address that Umami resolved. */
+export function withClientIp(headers: Headers) {
+  const result = new Headers(headers);
+  const ip = stripPort(getIpAddress(headers));
+
+  result.delete(CLIENT_IP_HEADER);
+
+  if (ip) {
+    result.set(CLIENT_IP_HEADER, ip);
+  }
+
+  return result;
+}
 
 // better-auth stores raw strings and writes some keys without a TTL, so this
 // bypasses the JSON encoding and default TTL of the standard redis wrapper.
@@ -151,6 +172,7 @@ function createAuth() {
       // breaks self-hosted installs served over plain http. Unless COOKIE_SECURE or
       // CLOUD_URL decides, withSecureCookies follows the protocol of each request.
       useSecureCookies: getForcedSecureCookies() ?? false,
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
     },
     plugins: [
       // The casts work around plugin types that need strictNullChecks, which
@@ -223,7 +245,7 @@ export async function revokeUserSessions(userId: string) {
 export async function createUserSession(request: Request, userId: string) {
   // The caller may carry a bearer value that is not a session (the 2FA partial
   // token), so it is not passed on.
-  const requestHeaders = new Headers(request.headers);
+  const requestHeaders = withClientIp(request.headers);
   requestHeaders.delete('authorization');
 
   const { headers, response } = await getAuth().api.createUserSession({

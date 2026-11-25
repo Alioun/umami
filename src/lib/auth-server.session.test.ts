@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { checkAuth } from '@/lib/auth';
 import { AUTH_SESSION_TTL } from '@/lib/constants';
-import { createUserSession, getAuth, refreshUserSession } from './auth-server';
+import { createUserSession, getAuth, refreshUserSession, withClientIp } from './auth-server';
 
 vi.hoisted(() => {
   process.env.APP_SECRET ??= 'test-app-secret';
@@ -163,4 +163,20 @@ test('COOKIE_SECURE=1 sets a __Secure- cookie and reads it back', async () => {
 
   expect(setCookie).toMatch(/^__Secure-umami\.session_token=.*; Secure/);
   expect(auth.user.id).toBe(userId);
+});
+
+// better-auth limits requests per client address, and without the resolved one it would count
+// every client behind a proxy chain in one bucket.
+describe('client address', () => {
+  test('is taken from a proxy chain', () => {
+    const headers = withClientIp(new Headers({ 'x-forwarded-for': '203.0.113.7, 10.0.0.2' }));
+
+    expect(headers.get('x-umami-auth-client-ip')).toBe('203.0.113.7');
+  });
+
+  test('is never one the client sent in the internal header', () => {
+    const headers = withClientIp(new Headers({ 'x-umami-auth-client-ip': '198.51.100.1' }));
+
+    expect(headers.has('x-umami-auth-client-ip')).toBe(false);
+  });
 });

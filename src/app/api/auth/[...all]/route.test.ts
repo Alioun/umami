@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => ({
 }));
 const { handler } = mocks;
 
-vi.mock('@/lib/auth-server', () => ({
+vi.mock('@/lib/auth-server', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/lib/auth-server')>()),
   getAuth: () => ({ handler }),
 }));
 
@@ -121,4 +122,21 @@ test('a callback forwarded as https gets a Secure session cookie', async () => {
   expect(response.status).toBe(302);
   expect(response.headers.get('location')).toBe('/websites');
   expect(response.headers.get('set-cookie')).toBe('umami.session_token=abc; Path=/; Secure');
+});
+
+// better-auth limits requests per client address. It gets the address Umami resolves, never one
+// the client sent in the internal header itself.
+test('passes better-auth the client address that Umami resolved', async () => {
+  await POST(
+    new Request('http://localhost/api/auth/sign-in/social', {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '203.0.113.7', 'x-umami-auth-client-ip': '198.51.100.1' },
+      body: JSON.stringify({ provider: 'oidc' }),
+    }),
+  );
+
+  const forwarded: Request = handler.mock.calls[0][0];
+
+  expect(forwarded.headers.get('x-umami-auth-client-ip')).toBe('203.0.113.7');
+  expect(await forwarded.json()).toEqual({ provider: 'oidc' });
 });
