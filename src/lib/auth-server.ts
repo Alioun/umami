@@ -92,10 +92,10 @@ function createAuth() {
     session: {
       // The analytics visitor table owns the "session" name.
       modelName: 'authSession',
+      // A session in use is extended once a day (better-auth's default updateAge), but only
+      // by refreshUserSession: checkAuth reads without refreshing, because a request that is
+      // only being authenticated cannot set the renewed cookie.
       expiresIn: AUTH_SESSION_TTL,
-      // A refreshed session would need a new cookie, which a request that is only being
-      // authenticated cannot set.
-      disableSessionRefresh: true,
       // Unlinking an account is the only exposed endpoint with a session age limit, and Umami
       // has no way to ask the user to sign in again for it.
       freshAge: 0,
@@ -235,6 +235,19 @@ export async function createUserSession(request: Request, userId: string) {
   });
 
   return { token: response.token as string, headers };
+}
+
+/**
+ * Moves the expiry of the request's session forward when it is due, so an active user stays
+ * signed in. Returns the headers that renew the cookie, without Set-Cookie when nothing changed.
+ */
+export async function refreshUserSession(request: Request) {
+  const { headers } = await getAuth().api.getSession({
+    headers: request.headers,
+    returnHeaders: true,
+  });
+
+  return headers;
 }
 
 /** Ends the session of the request. Returns the headers that clear the cookie. */

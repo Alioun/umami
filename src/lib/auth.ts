@@ -99,7 +99,12 @@ async function getAuthSession(request: Request) {
   }
 
   try {
-    return await getAuth().api.getSession({ headers: request.headers });
+    // The response of an ordinary route carries no renewed cookie, so it does not extend the
+    // session either. /api/auth/verify does that (refreshUserSession).
+    return await getAuth().api.getSession({
+      headers: request.headers,
+      query: { disableRefresh: true },
+    });
   } catch (e) {
     log(e);
     return null;
