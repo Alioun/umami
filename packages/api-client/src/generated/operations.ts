@@ -5424,7 +5424,7 @@ export abstract class GeneratedUmamiClient {
 
   /**
    * Log out
-   * Ends the current authentication session and clears its cookie.
+   * Ends the current authentication session and clears its cookie. For a session that came from an OpenID Connect provider, it also returns the URL that ends the session at the provider.
    * `POST /api/auth/logout`
    */
   logout(

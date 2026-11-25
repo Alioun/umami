@@ -6,11 +6,20 @@ const ORIGIN = 'http://localhost:3000';
 const state = vi.hoisted(() => ({
   db: {} as Record<string, Record<string, any>[]>,
   profile: {} as Record<string, any>,
+  endSessionEndpoint: undefined as string | undefined,
+  twoFactorEnabled: false,
 }));
 
 // The real configuration runs against better-auth's in-memory adapter instead of Postgres.
 vi.mock('better-auth/adapters/prisma', () => ({ prismaAdapter: () => memoryAdapter(state.db) }));
-vi.mock('@/lib/prisma', () => ({ default: { client: {} } }));
+vi.mock('@/lib/prisma', () => ({
+  default: {
+    client: {
+      twoFactorAuth: { findUnique: async () => state.twoFactorEnabled && { isEnabled: true } },
+    },
+  },
+}));
+vi.mock('@/lib/two-factor/policy', () => ({ isTwoFactorSetupRequired: async () => false }));
 
 // The provider's endpoints are replaced, so no discovery document or token exchange is fetched.
 vi.mock('@/lib/oidc', async importOriginal => {
@@ -23,22 +32,34 @@ vi.mock('@/lib/oidc', async importOriginal => {
       discoveryUrl: undefined,
       authorizationUrl: 'https://idp.example/authorize',
       tokenUrl: 'https://idp.example/token',
-      getToken: async () => ({ accessToken: 'access-token', tokenType: 'bearer' }),
+      endSessionEndpoint: state.endSessionEndpoint,
+      getToken: async () => ({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        idToken: 'id-token',
+        tokenType: 'bearer',
+      }),
       // A custom getUserInfo has to supply the id that better-auth otherwise takes from sub.
       getUserInfo: async () => ({ id: state.profile.sub, ...state.profile }),
     }),
   };
 });
 
-async function createAuth() {
+async function loadAuthServer() {
   vi.resetModules();
   delete globalThis['better-auth-instance'];
-  const { getAuth } = await import('./auth-server');
 
-  return getAuth();
+  return import('./auth-server');
 }
 
-/** Starts a provider sign-in from the login page and returns where the provider's answer leads. */
+async function createAuth() {
+  return (await loadAuthServer()).getAuth();
+}
+
+/**
+ * Starts a provider sign-in from the login page. Returns where the provider's answer leads and
+ * the cookies the browser holds afterwards.
+ */
 async function signInWithProvider(profile: Record<string, any>, answer = 'code=code') {
   state.profile = profile;
   const auth = await createAuth();
@@ -63,7 +84,13 @@ async function signInWithProvider(profile: Record<string, any>, answer = 'code=c
     ),
   );
 
-  return new URL(callback.headers.get('location'), ORIGIN);
+  return {
+    location: new URL(callback.headers.get('location'), ORIGIN),
+    cookie: callback.headers
+      .getSetCookie()
+      .map(value => value.split(';')[0])
+      .join('; '),
+  };
 }
 
 beforeEach(() => {
@@ -75,6 +102,9 @@ beforeEach(() => {
   vi.stubEnv('OIDC_CLIENT_ID', 'umami');
   vi.stubEnv('OIDC_CLIENT_SECRET', 'secret');
   vi.stubEnv('OIDC_DISABLE_SIGNUP', '');
+  vi.stubEnv('OIDC_DISABLE_PROVIDER_LOGOUT', '');
+  state.endSessionEndpoint = 'https://idp.example/logout';
+  state.twoFactorEnabled = false;
 
   state.db = {
     user: [
@@ -98,7 +128,7 @@ beforeEach(() => {
 
 describe('provider sign-in errors', () => {
   test('a provider username that a local user holds returns to the login page without a new user', async () => {
-    const location = await signInWithProvider({
+    const { location } = await signInWithProvider({
       sub: 'subject-1',
       preferred_username: 'Alice',
       email: 'alice@example.com',
@@ -113,7 +143,7 @@ describe('provider sign-in errors', () => {
   test('an unknown user returns to the login page when sign-up is disabled', async () => {
     vi.stubEnv('OIDC_DISABLE_SIGNUP', '1');
 
-    const location = await signInWithProvider({
+    const { location } = await signInWithProvider({
       sub: 'subject-2',
       preferred_username: 'bob',
       email: 'bob@example.com',
@@ -124,7 +154,7 @@ describe('provider sign-in errors', () => {
   });
 
   test('a provider email address that a local user has, without a linked account, returns to the login page', async () => {
-    const location = await signInWithProvider({
+    const { location } = await signInWithProvider({
       sub: 'subject-3',
       preferred_username: 'carol',
       email: 'local-user@placeholder.local',
@@ -135,7 +165,7 @@ describe('provider sign-in errors', () => {
   });
 
   test('an error from the provider returns to the login page with its code', async () => {
-    const location = await signInWithProvider({}, 'error=access_denied');
+    const { location } = await signInWithProvider({}, 'error=access_denied');
 
     expect(location.pathname).toBe('/login');
     expect(location.searchParams.get('error')).toBe('access_denied');
@@ -151,5 +181,115 @@ describe('provider sign-in errors', () => {
 
     expect(location.pathname).toBe('/login');
     expect(location.searchParams.get('error')).toBe('state_mismatch');
+  });
+});
+
+describe('logout', () => {
+  const profile = { sub: 'subject-4', preferred_username: 'dave', email: 'dave@example.com' };
+
+  function logoutRequest(cookie: string, headers: Record<string, string> = {}) {
+    return new Request(`${ORIGIN}/api/auth/logout`, {
+      method: 'POST',
+      headers: { cookie, ...headers },
+    });
+  }
+
+  test('a provider session ends at the provider too, which sends the user back to the login page', async () => {
+    const { cookie } = await signInWithProvider(profile);
+    const { endUserSession } = await import('./auth-server');
+
+    const { redirect } = await endUserSession(logoutRequest(cookie));
+    const url = new URL(redirect);
+
+    expect(`${url.origin}${url.pathname}`).toBe('https://idp.example/logout');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      id_token_hint: 'id-token',
+      post_logout_redirect_uri: `${ORIGIN}/login`,
+      client_id: 'umami',
+    });
+    expect(state.db.authSession).toHaveLength(0);
+  });
+
+  test('only the ID token of the provider is kept', async () => {
+    await signInWithProvider(profile);
+
+    expect(state.db.account).toEqual([
+      expect.objectContaining({ idToken: 'id-token', accessToken: null, refreshToken: null }),
+    ]);
+  });
+
+  test('the return address behind a reverse proxy is the public one', async () => {
+    const { cookie } = await signInWithProvider(profile);
+    const { endUserSession } = await import('./auth-server');
+
+    const { redirect } = await endUserSession(
+      logoutRequest(cookie, { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'umami.example' }),
+    );
+
+    expect(new URL(redirect).searchParams.get('post_logout_redirect_uri')).toBe(
+      'https://umami.example/login',
+    );
+  });
+
+  test('a password session of a user with a linked provider account ends only in Umami', async () => {
+    await signInWithProvider(profile);
+    const { createUserSession, endUserSession } = await import('./auth-server');
+    const userId = state.db.account[0].userId;
+    const { headers } = await createUserSession(
+      new Request(`${ORIGIN}/api/auth/login`, { method: 'POST' }),
+      userId,
+    );
+    const cookie = headers.getSetCookie()[0].split(';')[0];
+
+    const { redirect } = await endUserSession(logoutRequest(cookie));
+
+    expect(redirect).toBeUndefined();
+    expect(state.db.authSession.filter(session => session.userId === userId)).toHaveLength(1);
+  });
+
+  test('a session that finished a provider sign-in with 2FA ends at the provider too', async () => {
+    vi.stubEnv('TWO_FACTOR_ENCRYPTION_KEY', '0'.repeat(64));
+    state.twoFactorEnabled = true;
+    const { location } = await signInWithProvider(profile);
+    const { createUserSession, endUserSession } = await import('./auth-server');
+    const { parseSecureToken } = await import('@/lib/jwt');
+    const { secret } = await import('@/lib/crypto');
+    // What /api/2fa/verify does with the partial token once the code is right.
+    const partial = parseSecureToken(
+      decodeURIComponent(location.hash.slice('#token='.length)),
+      secret(),
+    ) as Record<string, string>;
+    const { headers } = await createUserSession(
+      new Request(`${ORIGIN}/api/2fa/verify`, { method: 'POST' }),
+      partial.userId,
+      partial.providerId,
+    );
+
+    const { redirect } = await endUserSession(
+      logoutRequest(headers.getSetCookie()[0].split(';')[0]),
+    );
+
+    expect(redirect).toMatch(/^https:\/\/idp\.example\/logout\?/);
+  });
+
+  test('a provider without an end-session endpoint ends only in Umami', async () => {
+    state.endSessionEndpoint = undefined;
+    const { cookie } = await signInWithProvider(profile);
+    const { endUserSession } = await import('./auth-server');
+
+    const { redirect } = await endUserSession(logoutRequest(cookie));
+
+    expect(redirect).toBeUndefined();
+    expect(state.db.authSession).toHaveLength(0);
+  });
+
+  test('OIDC_DISABLE_PROVIDER_LOGOUT=1 ends the session only in Umami', async () => {
+    vi.stubEnv('OIDC_DISABLE_PROVIDER_LOGOUT', '1');
+    const { cookie } = await signInWithProvider(profile);
+    const { endUserSession } = await import('./auth-server');
+
+    const { redirect } = await endUserSession(logoutRequest(cookie));
+
+    expect(redirect).toBeUndefined();
   });
 });

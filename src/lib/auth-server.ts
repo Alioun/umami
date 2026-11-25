@@ -1,4 +1,4 @@
-import { type BetterAuthPlugin, betterAuth } from 'better-auth';
+import { type BetterAuthPlugin, betterAuth, getBaseURL } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { bearer, genericOAuth, username } from 'better-auth/plugins';
 import { getForcedSecureCookies, withSecureCookies } from '@/lib/auth-cookies';
@@ -54,13 +54,13 @@ const secondaryStorage = redis.enabled
 const PROVIDER_TOKEN_FIELDS = [
   'accessToken',
   'refreshToken',
-  'idToken',
   'accessTokenExpiresAt',
   'refreshTokenExpiresAt',
 ];
 
-// An external account is used to identify the user and nothing else, so the
-// provider's tokens are not kept.
+// An external account is used to identify the user and nothing else, so the provider's access
+// and refresh tokens are not kept. The ID token is: logout sends it to the provider as
+// id_token_hint, without which a provider such as Keycloak asks the user to confirm the logout.
 function withoutProviderTokens(account: Record<string, any>) {
   const data = { ...account };
 
@@ -126,6 +126,14 @@ function createAuth() {
           required: false,
           input: false,
         },
+        // The external provider the user signed in through, so logout ends the provider's
+        // session only when this session came from it. A user can have a password and a linked
+        // account at once.
+        providerId: {
+          type: 'string',
+          required: false,
+          input: false,
+        },
       },
     },
     account: {
@@ -148,11 +156,12 @@ function createAuth() {
       session: {
         create: {
           // Decided once, when the session is created, whichever way the user signed in.
-          before: async (session: { userId: string }) => {
+          before: async (session: { userId: string }, context) => {
             return {
               data: {
                 ...session,
                 twoFactorSetup: await isTwoFactorSetupRequired(session.userId),
+                ...(context?.path?.startsWith('/callback/') && { providerId: context.params.id }),
               },
             };
           },
@@ -239,17 +248,18 @@ export async function revokeUserSessions(userId: string) {
 }
 
 /**
- * Creates a session for a user that Umami has already authenticated. Returns
- * the session token and the Set-Cookie headers that carry the session cookie.
+ * Creates a session for a user that Umami has already authenticated, through the external
+ * provider `providerId` when one was the first sign-in step. Returns the session token and the
+ * Set-Cookie headers that carry the session cookie.
  */
-export async function createUserSession(request: Request, userId: string) {
+export async function createUserSession(request: Request, userId: string, providerId?: string) {
   // The caller may carry a bearer value that is not a session (the 2FA partial
   // token), so it is not passed on.
   const requestHeaders = withClientIp(request.headers);
   requestHeaders.delete('authorization');
 
   const { headers, response } = await getAuth().api.createUserSession({
-    body: { userId },
+    body: { userId, providerId },
     headers: requestHeaders,
     returnHeaders: true,
   });
@@ -270,12 +280,49 @@ export async function refreshUserSession(request: Request) {
   return withSecureCookies(request, headers);
 }
 
-/** Ends the session of the request. Returns the headers that clear the cookie. */
+/**
+ * The URL that ends the user's session at the provider the session came from, or undefined when
+ * that provider has no end-session endpoint. The provider sends the user back to the login page.
+ */
+async function getProviderLogoutUrl(request: Request, userId: string, providerId: string) {
+  const ctx = await getAuth().$context;
+  const provider = ctx.socialProviders.find(({ id }) => id === providerId);
+  const account = (await ctx.internalAdapter.findAccounts(userId)).find(
+    account => account.providerId === providerId,
+  );
+  // The provider matches this URL against the ones registered for the client, so its origin is
+  // resolved like the one in the sign-in redirect URI.
+  const origin = getBaseURL(undefined, '/', request, undefined, true);
+  const url = await provider?.createEndSessionURL?.({
+    idToken: account?.idToken,
+    postLogoutRedirectURI: new URL(`${process.env.basePath || ''}/login`, origin).toString(),
+  });
+
+  return url?.toString();
+}
+
+/**
+ * Ends the session of the request. Returns the headers that clear the cookie, and the URL that
+ * ends the provider's session too when the user signed in through one that offers it.
+ */
 export async function endUserSession(request: Request) {
-  const { headers } = await getAuth().api.signOut({
+  const auth = getAuth();
+  const current = await auth.api.getSession({
     headers: request.headers,
+    query: { disableRefresh: true },
+  });
+  const providerId = current?.session.providerId;
+  const redirect = providerId
+    ? await getProviderLogoutUrl(request, current.user.id, providerId)
+    : undefined;
+
+  // better-auth would pick the provider from the user's most recently updated account instead
+  // of the session, and answer with a Location header, so its own provider logout is not used.
+  const { headers } = await auth.api.signOut({
+    headers: request.headers,
+    body: { disableRedirect: true },
     returnHeaders: true,
   });
 
-  return withSecureCookies(request, headers);
+  return { headers: withSecureCookies(request, headers), redirect };
 }

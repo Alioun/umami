@@ -29,6 +29,9 @@ export function getOidcConfig() {
     pkce: true,
     // Only users who have already linked their account can sign in.
     disableSignUp: parseBooleanEnv(process.env.OIDC_DISABLE_SIGNUP) ?? false,
+    // Logout also ends the session at the provider, when its discovery document has an
+    // end_session_endpoint.
+    disableProviderLogout: parseBooleanEnv(process.env.OIDC_DISABLE_PROVIDER_LOGOUT) ?? false,
     mapProfileToUser: (profile: Record<string, any>) => {
       // Umami identifies users by username; the email and the subject are the fallbacks for
       // providers that do not send preferred_username.

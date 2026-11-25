@@ -281,7 +281,7 @@ export interface paths {
     put?: never;
     /**
      * Log out
-     * @description Ends the current authentication session and clears its cookie.
+     * @description Ends the current authentication session and clears its cookie. For a session that came from an OpenID Connect provider, it also returns the URL that ends the session at the provider.
      */
     post: operations['logout'];
     delete?: never;
@@ -3203,6 +3203,15 @@ export interface components {
       /** @description Username of the account. */
       username: string;
     };
+    LogoutResponse: {
+      /** @description Whether the operation succeeded. */
+      ok: boolean;
+      /**
+       * Format: uri
+       * @description The provider's end-session URL, when the session came from a sign-in through an OpenID Connect provider that offers one. The browser goes there next, and the provider returns it to the login page.
+       */
+      redirect?: string;
+    };
     MetricRow: {
       t?: string;
       /** @description Dimension value (e.g. a path or country). */
@@ -5237,16 +5246,13 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description The operation completed successfully. */
+      /** @description The session has ended. */
       200: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            /** @description Whether the operation succeeded. */
-            ok: boolean;
-          };
+          'application/json': components['schemas']['LogoutResponse'];
         };
       };
       /** @description Unauthorized. */

@@ -84,7 +84,8 @@ export const operationDescriptions: Record<string, OperationDescription> = {
   },
   'POST /api/auth/logout': {
     summary: 'Log out',
-    description: 'Ends the current authentication session and clears its cookie.',
+    description:
+      'Ends the current authentication session and clears its cookie. For a session that came from an OpenID Connect provider, it also returns the URL that ends the session at the provider.',
   },
   'POST /api/auth/sso': {
     summary: 'Create a single sign-on token',
