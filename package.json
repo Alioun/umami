@@ -60,6 +60,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:docker": "tsx scripts/test-api.ts --e2e",
     "test:e2e:docker:clickhouse": "tsx scripts/test-api.ts --e2e --clickhouse",
+    "test:e2e:docker:oidc": "tsx scripts/test-api.ts --oidc",
     "test:api": "tsx scripts/test-api.ts",
     "test:api:clickhouse": "tsx scripts/test-api.ts --clickhouse",
     "test:api:run": "playwright test -c playwright.api.config.ts",
