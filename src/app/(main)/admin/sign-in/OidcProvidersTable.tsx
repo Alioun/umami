@@ -1,13 +1,21 @@
 import { DataColumn, DataTable, StatusLight, Text } from '@umami/react-zen';
 import Link from '@/components/common/Link';
 import { type OidcProviderResponse, useMessages } from '@/components/hooks';
-import { getProviderStatus } from './oidcProviderStatus';
 
 const STATUS = {
   active: { variant: 'success', label: 'providerActive' },
   incomplete: { variant: 'inactive', label: 'providerIncomplete' },
   unreadable: { variant: 'warning', label: 'secretUnreadable' },
 } as const;
+
+/** Whether the login page offers the provider, mirroring isUsable on the server. */
+function getProviderStatus({ discoveryUrl, clientId, clientSecret }: OidcProviderResponse) {
+  if (clientSecret === 'unreadable') {
+    return 'unreadable';
+  }
+
+  return discoveryUrl && clientId && clientSecret === 'set' ? 'active' : 'incomplete';
+}
 
 export function OidcProvidersTable({ data }: { data: OidcProviderResponse[] }) {
   const { t, labels } = useMessages();
