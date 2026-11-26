@@ -43,6 +43,26 @@ export const operationDescriptions: Record<string, OperationDescription> = {
     description:
       'Enables or disables the installation-wide requirement for users to set up two-factor authentication.',
   },
+  'GET /api/admin/oidc-providers': {
+    summary: 'List OIDC providers',
+    description:
+      'Returns every OIDC provider with its group mapping, which settings environment variables set, and the groups the latest sign-in sent. Client secrets are reported only as set, missing or unreadable.',
+  },
+  'POST /api/admin/oidc-providers': {
+    summary: 'Add an OIDC provider',
+    description:
+      'Adds an OIDC provider that users can sign in through, with its group mapping. The client secret is stored encrypted.',
+  },
+  'POST /api/admin/oidc-providers/{slug}': {
+    summary: 'Update an OIDC provider',
+    description:
+      'Changes the settings of an OIDC provider. Settings left out keep their value, and given mappings replace the old ones. Settings an environment variable sets are not changed.',
+  },
+  'DELETE /api/admin/oidc-providers/{slug}': {
+    summary: 'Remove an OIDC provider',
+    description:
+      'Removes a stored OIDC provider and its group mapping. Accounts linked through it stay, and work again if a provider with the same slug is added.',
+  },
   'GET /api/admin/teams': {
     summary: 'List all teams',
     description:

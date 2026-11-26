@@ -142,6 +142,54 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/admin/oidc-providers': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List OIDC providers
+     * @description Returns every OIDC provider with its group mapping, which settings environment variables set, and the groups the latest sign-in sent. Client secrets are reported only as set, missing or unreadable.
+     */
+    get: operations['getAdminOidcProviders'];
+    put?: never;
+    /**
+     * Add an OIDC provider
+     * @description Adds an OIDC provider that users can sign in through, with its group mapping. The client secret is stored encrypted.
+     */
+    post: operations['postAdminOidcProviders'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/admin/oidc-providers/{slug}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Update an OIDC provider
+     * @description Changes the settings of an OIDC provider. Settings left out keep their value, and given mappings replace the old ones. Settings an environment variable sets are not changed.
+     */
+    post: operations['postAdminOidcProvidersSlug'];
+    /**
+     * Remove an OIDC provider
+     * @description Removes a stored OIDC provider and its group mapping. Accounts linked through it stay, and work again if a provider with the same slug is added.
+     */
+    delete: operations['deleteAdminOidcProvidersSlug'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/admin/teams': {
     parameters: {
       query?: never;
@@ -4419,6 +4467,429 @@ export interface operations {
            *         "code": "service-unavailable",
            *         "message": "Service unavailable.",
            *         "status": 503
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  getAdminOidcProviders: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The operation completed successfully. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            providers: {
+              clientId: string;
+              clientSecret: 'set' | 'missing' | 'unreadable';
+              disableProviderLogout: boolean;
+              disableSignup: boolean;
+              discoveryUrl: string;
+              groupsClaim: string;
+              lastGroups: {
+                groups: string[];
+                signedInAt: string;
+              };
+              lockedBy: {
+                clientId?: string;
+                clientSecret?: string;
+                disableProviderLogout?: string;
+                disableSignup?: string;
+                discoveryUrl?: string;
+                /** @description Display name of the resource. */
+                name?: string;
+                scopes?: string;
+              };
+              mappings: (
+                | ({
+                    group: string;
+                    /** @description Permission role assigned to the user. */
+                    role: 'user' | 'admin' | 'view-only';
+                  } & {
+                    /** @description ID of the associated team. */
+                    teamId: string;
+                    teamRole: 'team-owner' | 'team-manager' | 'team-member' | 'team-view-only';
+                  })
+                | ({
+                    group: string;
+                    /** @description Permission role assigned to the user. */
+                    role: 'user' | 'admin' | 'view-only';
+                  } & {
+                    /** @description ID of the associated team. */
+                    teamId: null;
+                    teamRole: null;
+                  })
+              )[];
+              /** @description Display name of the resource. */
+              name: string;
+              scopes: string;
+              /** @description URL slug used to access the resource. */
+              slug: string;
+              stored: boolean;
+            }[];
+          };
+        };
+      };
+      /** @description Unauthorized. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "unauthorized",
+           *         "message": "Unauthorized.",
+           *         "status": 401
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "not-found",
+           *         "message": "Not found.",
+           *         "status": 404
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  postAdminOidcProviders: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description The operation completed successfully. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            clientId: string;
+            clientSecret: 'set' | 'missing' | 'unreadable';
+            disableProviderLogout: boolean;
+            disableSignup: boolean;
+            discoveryUrl: string;
+            groupsClaim: string;
+            lastGroups: {
+              groups: string[];
+              signedInAt: string;
+            };
+            lockedBy: {
+              clientId?: string;
+              clientSecret?: string;
+              disableProviderLogout?: string;
+              disableSignup?: string;
+              discoveryUrl?: string;
+              /** @description Display name of the resource. */
+              name?: string;
+              scopes?: string;
+            };
+            mappings: (
+              | ({
+                  group: string;
+                  /** @description Permission role assigned to the user. */
+                  role: 'user' | 'admin' | 'view-only';
+                } & {
+                  /** @description ID of the associated team. */
+                  teamId: string;
+                  teamRole: 'team-owner' | 'team-manager' | 'team-member' | 'team-view-only';
+                })
+              | ({
+                  group: string;
+                  /** @description Permission role assigned to the user. */
+                  role: 'user' | 'admin' | 'view-only';
+                } & {
+                  /** @description ID of the associated team. */
+                  teamId: null;
+                  teamRole: null;
+                })
+            )[];
+            /** @description Display name of the resource. */
+            name: string;
+            scopes: string;
+            /** @description URL slug used to access the resource. */
+            slug: string;
+            stored: boolean;
+          };
+        };
+      };
+      /** @description Bad request. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "bad-request",
+           *         "message": "Bad request.",
+           *         "status": 400
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Unauthorized. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "unauthorized",
+           *         "message": "Unauthorized.",
+           *         "status": 401
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "not-found",
+           *         "message": "Not found.",
+           *         "status": 404
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  postAdminOidcProvidersSlug: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description URL slug used to access the resource. */
+        slug: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description The operation completed successfully. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            clientId: string;
+            clientSecret: 'set' | 'missing' | 'unreadable';
+            disableProviderLogout: boolean;
+            disableSignup: boolean;
+            discoveryUrl: string;
+            groupsClaim: string;
+            lastGroups: {
+              groups: string[];
+              signedInAt: string;
+            };
+            lockedBy: {
+              clientId?: string;
+              clientSecret?: string;
+              disableProviderLogout?: string;
+              disableSignup?: string;
+              discoveryUrl?: string;
+              /** @description Display name of the resource. */
+              name?: string;
+              scopes?: string;
+            };
+            mappings: (
+              | ({
+                  group: string;
+                  /** @description Permission role assigned to the user. */
+                  role: 'user' | 'admin' | 'view-only';
+                } & {
+                  /** @description ID of the associated team. */
+                  teamId: string;
+                  teamRole: 'team-owner' | 'team-manager' | 'team-member' | 'team-view-only';
+                })
+              | ({
+                  group: string;
+                  /** @description Permission role assigned to the user. */
+                  role: 'user' | 'admin' | 'view-only';
+                } & {
+                  /** @description ID of the associated team. */
+                  teamId: null;
+                  teamRole: null;
+                })
+            )[];
+            /** @description Display name of the resource. */
+            name: string;
+            scopes: string;
+            /** @description URL slug used to access the resource. */
+            slug: string;
+            stored: boolean;
+          };
+        };
+      };
+      /** @description Bad request. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "bad-request",
+           *         "message": "Bad request.",
+           *         "status": 400
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Unauthorized. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "unauthorized",
+           *         "message": "Unauthorized.",
+           *         "status": 401
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "not-found",
+           *         "message": "Not found.",
+           *         "status": 404
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  deleteAdminOidcProvidersSlug: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description URL slug used to access the resource. */
+        slug: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The operation completed successfully. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            /**
+             * @description Whether the operation succeeded.
+             * @constant
+             */
+            ok: true;
+          };
+        };
+      };
+      /** @description Unauthorized. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "unauthorized",
+           *         "message": "Unauthorized.",
+           *         "status": 401
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "not-found",
+           *         "message": "Not found.",
+           *         "status": 404
            *       }
            *     }
            */
@@ -11700,6 +12171,7 @@ export interface operations {
               /** @description Unique identifier of the resource. */
               id: string;
               ipAddress: string;
+              providerId: string;
               token: string;
               twoFactorSetup: boolean;
               /**

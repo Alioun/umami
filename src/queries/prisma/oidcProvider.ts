@@ -63,6 +63,21 @@ export async function saveOidcProvider(
   });
 }
 
+/** Whether one of the mappings names a team that does not exist. */
+export async function hasMissingTeams(mappings: GroupMapping[] = []) {
+  const teamIds = [...new Set(mappings.map(({ teamId }) => teamId).filter(Boolean))];
+
+  if (!teamIds.length) {
+    return false;
+  }
+
+  const count = await prisma.client.team.count({
+    where: { id: { in: teamIds }, deletedAt: null },
+  });
+
+  return count !== teamIds.length;
+}
+
 export async function deleteOidcProvider(slug: string) {
   await prisma.client.oidcProvider.deleteMany({ where: { slug } });
 }
