@@ -7,7 +7,7 @@ import type { LastGroups, OidcProviderData } from '@/queries/prisma/oidcProvider
 
 const optionalText = (max: number) => z.string().trim().max(max).nullable().optional();
 
-export const oidcGroupMappingSchema = z
+const oidcGroupMappingSchema = z
   .object({
     group: z.string().trim().min(1).max(255),
     role: z.enum(USER_ROLES).nullable(),
@@ -41,7 +41,7 @@ export const oidcProviderSlugSchema = z
   .regex(/^[a-z0-9-]+$/)
   .refine(slug => slug !== CREDENTIAL_PROVIDER_ID, { message: 'This name is reserved.' });
 
-export type OidcProviderInput = z.infer<typeof oidcProviderSchema>;
+type OidcProviderInput = z.infer<typeof oidcProviderSchema>;
 
 /**
  * The stored data for a change. Settings an environment variable sets are left out: the variable

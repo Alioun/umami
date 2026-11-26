@@ -8,8 +8,8 @@ export const TEAM_ROLES = [
   ROLES.teamViewOnly,
 ] as const;
 
-export type UserRole = (typeof USER_ROLES)[number];
-export type TeamRole = (typeof TEAM_ROLES)[number];
+type UserRole = (typeof USER_ROLES)[number];
+type TeamRole = (typeof TEAM_ROLES)[number];
 
 /**
  * One row of a provider's mapping. A group can grant a role, a team membership, both, or only the

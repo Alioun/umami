@@ -1,4 +1,4 @@
-import { getOidcProviders, invalidateOidcProviders } from '@/lib/oidc';
+import { getOidcProvider, invalidateOidcProviders } from '@/lib/oidc';
 import { oidcProviderSchema, toProviderData, toProviderResponse } from '@/lib/oidc-admin';
 import { parseRequest } from '@/lib/request';
 import { badRequest, json, notFound, ok, unauthorized } from '@/lib/response';
@@ -9,10 +9,6 @@ import {
   hasMissingTeams,
   saveOidcProvider,
 } from '@/queries/prisma';
-
-async function findProvider(slug: string) {
-  return (await getOidcProviders()).find(provider => provider.slug === slug);
-}
 
 export async function POST(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   if (process.env.CLOUD_MODE) {
@@ -30,7 +26,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   }
 
   const { slug } = await params;
-  const provider = await findProvider(slug);
+  const provider = await getOidcProvider(slug);
 
   if (!provider) {
     return notFound();
@@ -43,7 +39,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
   await saveOidcProvider(slug, toProviderData(body, provider.lockedBy), body.mappings);
   invalidateOidcProviders();
 
-  const [updated, lastGroups] = await Promise.all([findProvider(slug), getLastGroups()]);
+  const [updated, lastGroups] = await Promise.all([getOidcProvider(slug), getLastGroups()]);
 
   return json(toProviderResponse(updated, lastGroups[slug]));
 }
@@ -65,7 +61,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
 
   const { slug } = await params;
 
-  if (!(await findProvider(slug))?.stored) {
+  if (!(await getOidcProvider(slug))?.stored) {
     return notFound();
   }
 

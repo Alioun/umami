@@ -1,4 +1,4 @@
-import { getOidcProviders, invalidateOidcProviders } from '@/lib/oidc';
+import { getOidcProvider, getOidcProviders, invalidateOidcProviders } from '@/lib/oidc';
 import {
   oidcProviderSchema,
   oidcProviderSlugSchema,
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
 
   const { slug, ...input } = body;
 
-  if ((await getOidcProviders()).some(provider => provider.slug === slug)) {
+  if (await getOidcProvider(slug)) {
     return badRequest({ message: 'A provider with this name already exists.' });
   }
 
@@ -62,7 +62,5 @@ export async function POST(request: Request) {
   await saveOidcProvider(slug, toProviderData(input), input.mappings ?? []);
   invalidateOidcProviders();
 
-  const provider = (await getOidcProviders()).find(provider => provider.slug === slug);
-
-  return json(toProviderResponse(provider));
+  return json(toProviderResponse(await getOidcProvider(slug)));
 }

@@ -8,7 +8,13 @@ import { umamiSession } from '@/lib/auth-plugins/umami-session';
 import { AUTH_SESSION_TTL, ROLES } from '@/lib/constants';
 import { secret, uuid } from '@/lib/crypto';
 import { getIpAddress, stripPort } from '@/lib/ip';
-import { getGenericOAuthConfig, getOidcProviders, isUsable, type OidcProvider } from '@/lib/oidc';
+import {
+  getGenericOAuthConfig,
+  getOidcProvider,
+  getOidcProviders,
+  isUsable,
+  type OidcProvider,
+} from '@/lib/oidc';
 import { type GroupMappingResult, mapGroups, readGroups } from '@/lib/oidc-groups';
 import { checkPassword, hashPassword } from '@/lib/password';
 import prisma from '@/lib/prisma';
@@ -19,7 +25,7 @@ import { applyGroupMapping, saveLastGroups } from '@/queries/prisma/oidcProvider
 const REDIS_PREFIX = 'ba:';
 
 // The error code of a provider sign-in refused because the user is in none of the mapped groups.
-export const GROUP_NOT_ALLOWED = 'group_not_allowed';
+const GROUP_NOT_ALLOWED = 'group_not_allowed';
 
 // better-auth reads the client address only from a single-value X-Forwarded-For, and counts
 // every request with a proxy chain in one shared rate-limit bucket. Umami resolves the address
@@ -359,10 +365,7 @@ async function getProviderLogoutUrl(request: Request, userId: string, providerId
     'post_logout_redirect_uri',
     new URL(`${process.env.basePath || ''}/login`, origin).toString(),
   );
-  url.searchParams.set(
-    'client_id',
-    (await getOidcProviders()).find(({ slug }) => slug === providerId)?.clientId,
-  );
+  url.searchParams.set('client_id', (await getOidcProvider(providerId))?.clientId);
 
   return url.toString();
 }

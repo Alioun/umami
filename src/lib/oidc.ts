@@ -13,7 +13,7 @@ const CACHE_TTL = 5000;
 const OIDC_PROVIDERS = 'umami-oidc-providers';
 
 /** The environment variable behind each setting of the provider with the slug "oidc". */
-export const OIDC_ENV_VARS = {
+const OIDC_ENV_VARS = {
   name: 'OIDC_PROVIDER_NAME',
   discoveryUrl: 'OIDC_DISCOVERY_URL',
   clientId: 'OIDC_CLIENT_ID',
@@ -23,13 +23,13 @@ export const OIDC_ENV_VARS = {
   disableProviderLogout: 'OIDC_DISABLE_PROVIDER_LOGOUT',
 } as const;
 
-export type OidcEnvField = keyof typeof OIDC_ENV_VARS;
+type OidcEnvField = keyof typeof OIDC_ENV_VARS;
 
 /**
  * A stored client secret is unreadable when it was encrypted with another APP_SECRET. The
  * administrator then enters it again.
  */
-export type OidcClientSecret =
+type OidcClientSecret =
   | { status: 'set'; value: string }
   | { status: 'missing' }
   | { status: 'unreadable' };
@@ -48,17 +48,10 @@ export interface StoredOidcProvider {
   mappings: GroupMapping[];
 }
 
-export interface OidcProvider {
-  slug: string;
+/** A provider with its defaults filled in and the environment variables applied. */
+export interface OidcProvider extends Omit<StoredOidcProvider, 'name' | 'scopes'> {
   name: string;
-  discoveryUrl: string | null;
-  clientId: string | null;
-  clientSecret: OidcClientSecret;
   scopes: string;
-  groupsClaim: string;
-  disableSignup: boolean;
-  disableProviderLogout: boolean;
-  mappings: GroupMapping[];
   /** The environment variable behind each setting it sets. Those settings are read-only in the app. */
   lockedBy: Partial<Record<OidcEnvField, string>>;
   /** Whether the provider has a stored row, as every provider not set up by environment does. */
@@ -160,10 +153,12 @@ function toStoredProvider({ groupMappings, clientSecret, ...row }: OidcProviderR
 
 // Shared by every copy of this module that Next.js loads, so that a change saved through the API
 // reaches the login page and the auth routes at once.
+globalThis[OIDC_PROVIDERS] ??= { version: 0 };
+
 const state: {
   cache?: { key: string; providers: OidcProvider[]; checkedAt: number };
   version: number;
-} = (globalThis[OIDC_PROVIDERS] ??= { version: 0 });
+} = globalThis[OIDC_PROVIDERS];
 
 /**
  * Every OIDC provider, usable or not. The result is read again at most every few seconds, and it
@@ -199,6 +194,10 @@ export async function getOidcProviders(): Promise<OidcProvider[]> {
 export function invalidateOidcProviders() {
   state.cache = undefined;
   state.version++;
+}
+
+export async function getOidcProvider(slug: string) {
+  return (await getOidcProviders()).find(provider => provider.slug === slug);
 }
 
 /** The providers on the login page. */
