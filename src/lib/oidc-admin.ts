@@ -67,3 +67,5 @@ export function toProviderResponse(provider: OidcProvider, lastGroups?: LastGrou
 
   return { ...fields, clientSecret: clientSecret.status, lastGroups: lastGroups ?? null };
 }
+
+export type OidcProviderResponse = ReturnType<typeof toProviderResponse>;
