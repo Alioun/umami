@@ -493,6 +493,21 @@ describe('group mapping', () => {
     expect(signedInUser().role).toBe('user');
   });
 
+  test('a provider sign-in that fails after the group check grants nothing to a later session', async () => {
+    // The groups pass, then the provider username collides with the local user "alice".
+    const { location } = await signInWithProvider({ ...profile, preferred_username: 'Alice' });
+    const { createUserSession } = await import('./auth-server');
+
+    await createUserSession(
+      new Request(`${ORIGIN}/api/auth/login`, { method: 'POST' }),
+      'local-user',
+    );
+
+    expect(location.searchParams.get('error')).toBe('USERNAME_IS_ALREADY_TAKEN');
+    expect(state.db.user[0].role).toBe('user');
+    expect(membershipsOf('local-user')).toEqual({});
+  });
+
   test('without mappings everyone signs in and nothing changes', async () => {
     state.providers = [];
 

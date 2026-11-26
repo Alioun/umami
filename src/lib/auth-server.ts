@@ -77,7 +77,9 @@ function withoutProviderTokens(account: Record<string, any>) {
   return { data };
 }
 
-// What the groups of a provider sign-in grant, kept per request until its session is created.
+// What the groups of a provider sign-in grant, kept until its session is created. The key is the
+// endpoint context, which better-auth copies for every request (api/dispatch.mjs), so nothing
+// carries over to another request.
 const pendingMappings = new WeakMap<object, GroupMappingResult>();
 
 /**
