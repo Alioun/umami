@@ -117,8 +117,12 @@ function mapping(group: string, role: string | null, teamId?: string, teamRole?:
   return { group, role, teamId: teamId ?? null, teamRole: teamRole ?? null };
 }
 
-async function createAuth() {
-  return (await loadAuthServer()).getAuth();
+/** The Cookie header a browser sends back after a response with these headers. */
+function cookiesOf(headers: Headers) {
+  return headers
+    .getSetCookie()
+    .map(value => value.split(';')[0])
+    .join('; ');
 }
 
 /**
@@ -127,11 +131,10 @@ async function createAuth() {
  */
 async function signInWithProvider(
   profile: Record<string, any>,
-  answer = 'code=code',
-  provider = 'oidc',
+  { answer = 'code=code', provider = 'oidc' } = {},
 ) {
   state.profile = profile;
-  const auth = await createAuth();
+  const auth = await (await loadAuthServer()).getAuth();
 
   const start = await auth.handler(
     new Request(`${ORIGIN}/api/auth/sign-in/social`, {
@@ -141,10 +144,7 @@ async function signInWithProvider(
     }),
   );
   const { url } = await start.json();
-  const cookie = start.headers
-    .getSetCookie()
-    .map(value => value.split(';')[0])
-    .join('; ');
+  const cookie = cookiesOf(start.headers);
 
   const callback = await auth.handler(
     new Request(
@@ -155,14 +155,36 @@ async function signInWithProvider(
 
   return {
     location: new URL(callback.headers.get('location'), ORIGIN),
-    cookie: callback.headers
-      .getSetCookie()
-      .map(value => value.split(';')[0])
-      .join('; '),
+    cookie: cookiesOf(callback.headers),
   };
 }
 
+/**
+ * Creates a session as Umami's own routes do once they have authenticated the user, and returns
+ * its cookies.
+ */
+async function createSession(userId: string, providerId?: string) {
+  const { createUserSession } = await import('./auth-server');
+  const { headers } = await createUserSession(
+    new Request(`${ORIGIN}/api/auth/login`, { method: 'POST' }),
+    userId,
+    providerId,
+  );
+
+  return cookiesOf(headers);
+}
+
+function logoutRequest(cookie: string, headers: Record<string, string> = {}) {
+  return new Request(`${ORIGIN}/api/auth/logout`, {
+    method: 'POST',
+    headers: { cookie, ...headers },
+  });
+}
+
 beforeEach(() => {
+  // Without a configured base URL, better-auth falls back to window.location, which exists only
+  // under jsdom. On the server it has no base URL at all.
+  vi.stubGlobal('window', undefined);
   vi.unstubAllEnvs();
   vi.stubEnv('APP_SECRET', 'test-secret');
   vi.stubEnv('CLOUD_MODE', '');
@@ -196,6 +218,10 @@ beforeEach(() => {
     authSession: [],
     verification: [],
   };
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('provider sign-in errors', () => {
@@ -237,14 +263,14 @@ describe('provider sign-in errors', () => {
   });
 
   test('an error from the provider returns to the login page with its code', async () => {
-    const { location } = await signInWithProvider({}, 'error=access_denied');
+    const { location } = await signInWithProvider({}, { answer: 'error=access_denied' });
 
     expect(location.pathname).toBe('/login');
     expect(location.searchParams.get('error')).toBe('access_denied');
   });
 
   test('a callback without a valid state returns to the login page', async () => {
-    const auth = await createAuth();
+    const auth = await (await loadAuthServer()).getAuth();
 
     const callback = await auth.handler(
       new Request(`${ORIGIN}/api/auth/callback/oidc?code=code&state=unknown`),
@@ -258,23 +284,6 @@ describe('provider sign-in errors', () => {
 
 describe('logout', () => {
   const profile = { sub: 'subject-4', preferred_username: 'dave', email: 'dave@example.com' };
-
-  // Without a configured base URL, better-auth falls back to window.location, which exists only
-  // under jsdom. On the server it has no base URL at all.
-  beforeEach(() => {
-    vi.stubGlobal('window', undefined);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  function logoutRequest(cookie: string, headers: Record<string, string> = {}) {
-    return new Request(`${ORIGIN}/api/auth/logout`, {
-      method: 'POST',
-      headers: { cookie, ...headers },
-    });
-  }
 
   test('a provider session ends at the provider too, which sends the user back to the login page', async () => {
     const { cookie } = await signInWithProvider(profile);
@@ -315,13 +324,9 @@ describe('logout', () => {
 
   test('a password session of a user with a linked provider account ends only in Umami', async () => {
     await signInWithProvider(profile);
-    const { createUserSession, endUserSession } = await import('./auth-server');
+    const { endUserSession } = await import('./auth-server');
     const userId = state.db.account[0].userId;
-    const { headers } = await createUserSession(
-      new Request(`${ORIGIN}/api/auth/login`, { method: 'POST' }),
-      userId,
-    );
-    const cookie = headers.getSetCookie()[0].split(';')[0];
+    const cookie = await createSession(userId);
 
     const { redirect } = await endUserSession(logoutRequest(cookie));
 
@@ -333,7 +338,7 @@ describe('logout', () => {
     vi.stubEnv('TWO_FACTOR_ENCRYPTION_KEY', '0'.repeat(64));
     state.twoFactorEnabled = true;
     const { location } = await signInWithProvider(profile);
-    const { createUserSession, endUserSession } = await import('./auth-server');
+    const { endUserSession } = await import('./auth-server');
     const { parseSecureToken } = await import('@/lib/jwt');
     const { secret } = await import('@/lib/crypto');
     // What /api/2fa/verify does with the partial token once the code is right.
@@ -341,15 +346,9 @@ describe('logout', () => {
       decodeURIComponent(location.hash.slice('#token='.length)),
       secret(),
     ) as Record<string, string>;
-    const { headers } = await createUserSession(
-      new Request(`${ORIGIN}/api/2fa/verify`, { method: 'POST' }),
-      partial.userId,
-      partial.providerId,
-    );
+    const cookie = await createSession(partial.userId, partial.providerId);
 
-    const { redirect } = await endUserSession(
-      logoutRequest(headers.getSetCookie()[0].split(';')[0]),
-    );
+    const { redirect } = await endUserSession(logoutRequest(cookie));
 
     expect(redirect).toMatch(/^https:\/\/idp\.example\/logout\?/);
   });
@@ -480,12 +479,9 @@ describe('group mapping', () => {
       teamId: TEAM_B,
       role: 'team-owner',
     });
-    const { createUserSession } = await loadAuthServer();
+    await loadAuthServer();
 
-    await createUserSession(
-      new Request(`${ORIGIN}/api/auth/login`, { method: 'POST' }),
-      'local-user',
-    );
+    await createSession('local-user');
     await signInWithProvider({ ...profile, groups: ['/umami-users'] });
 
     expect(state.db.user[0].role).toBe('admin');
@@ -496,12 +492,8 @@ describe('group mapping', () => {
   test('a provider sign-in that fails after the group check grants nothing to a later session', async () => {
     // The groups pass, then the provider username collides with the local user "alice".
     const { location } = await signInWithProvider({ ...profile, preferred_username: 'Alice' });
-    const { createUserSession } = await import('./auth-server');
 
-    await createUserSession(
-      new Request(`${ORIGIN}/api/auth/login`, { method: 'POST' }),
-      'local-user',
-    );
+    await createSession('local-user');
 
     expect(location.searchParams.get('error')).toBe('USERNAME_IS_ALREADY_TAKEN');
     expect(state.db.user[0].role).toBe('user');
@@ -522,7 +514,6 @@ describe('several providers', () => {
   const profile = { sub: 'subject-6', preferred_username: 'frank', email: 'frank@example.com' };
 
   beforeEach(() => {
-    vi.stubGlobal('window', undefined);
     state.providers = [
       providerRow('authentik', {
         name: 'Authentik',
@@ -534,15 +525,10 @@ describe('several providers', () => {
     ];
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   test('a stored provider signs in through its own callback with its own mapping', async () => {
     const { location } = await signInWithProvider(
       { ...profile, groups: 'staff' },
-      'code=code',
-      'authentik',
+      { provider: 'authentik' },
     );
 
     expect(location.pathname).toBe('/');
@@ -555,8 +541,7 @@ describe('several providers', () => {
 
     const { location } = await signInWithProvider(
       { ...profile, groups: ['staff'] },
-      'code=code',
-      'authentik',
+      { provider: 'authentik' },
     );
 
     expect(location.pathname).toBe('/');
@@ -565,14 +550,11 @@ describe('several providers', () => {
   test('logout ends the session at the provider it came from, with that provider’s client ID', async () => {
     const { cookie } = await signInWithProvider(
       { ...profile, groups: ['staff'] },
-      'code=code',
-      'authentik',
+      { provider: 'authentik' },
     );
     const { endUserSession } = await import('./auth-server');
 
-    const { redirect } = await endUserSession(
-      new Request(`${ORIGIN}/api/auth/logout`, { method: 'POST', headers: { cookie } }),
-    );
+    const { redirect } = await endUserSession(logoutRequest(cookie));
 
     expect(new URL(redirect).searchParams.get('client_id')).toBe('umami-authentik');
   });

@@ -40,7 +40,7 @@ vi.mock('@/queries/prisma/user', () => ({
 
 const DAY = 24 * 60 * 60 * 1000;
 
-let userId: string;
+const USER_ID = 'user-1';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -51,9 +51,8 @@ beforeEach(async () => {
     rows.length = 0;
   }
 
-  userId = 'user-1';
   db.user.push({
-    id: userId,
+    id: USER_ID,
     email: 'someone@example.com',
     emailVerified: false,
     name: 'Someone',
@@ -69,7 +68,7 @@ function sessionCookie(headers: Headers) {
 
 async function signIn(init: RequestInit = {}, create = createUserSession) {
   const request = new Request('http://localhost/api/auth/login', { method: 'POST', ...init });
-  const { token, headers } = await create(request, userId);
+  const { token, headers } = await create(request, USER_ID);
 
   return { token, cookie: sessionCookie(headers).split(';')[0], setCookie: sessionCookie(headers) };
 }
@@ -91,7 +90,7 @@ test('an ordinary request authenticates without extending the session', async ()
 
   const auth = await checkAuth(new Request('http://localhost/api/me', { headers: { cookie } }));
 
-  expect(auth.user.id).toBe(userId);
+  expect(auth.user.id).toBe(USER_ID);
   expect(await storedExpiry(token)).toBe(nearExpiry.getTime());
 });
 
@@ -133,7 +132,7 @@ test('a bearer token session is extended and keeps its token', async () => {
   );
 
   expect(await storedExpiry(token)).toBeGreaterThan(Date.now() + AUTH_SESSION_TTL * 1000 - DAY);
-  expect(auth.user.id).toBe(userId);
+  expect(auth.user.id).toBe(USER_ID);
 });
 
 test('a session started behind a TLS-terminating proxy gets a Secure cookie', async () => {
@@ -141,7 +140,7 @@ test('a session started behind a TLS-terminating proxy gets a Secure cookie', as
   const auth = await checkAuth(new Request('http://localhost/api/me', { headers: { cookie } }));
 
   expect(setCookie).toMatch(/^umami\.session_token=.*; Secure$/);
-  expect(auth.user.id).toBe(userId);
+  expect(auth.user.id).toBe(USER_ID);
 });
 
 test('a session started over plain http gets a cookie without Secure', async () => {
@@ -161,7 +160,7 @@ test('COOKIE_SECURE=1 sets a __Secure- cookie and reads it back', async () => {
   const auth = await check(new Request('http://localhost/api/me', { headers: { cookie } }));
 
   expect(setCookie).toMatch(/^__Secure-umami\.session_token=.*; Secure/);
-  expect(auth.user.id).toBe(userId);
+  expect(auth.user.id).toBe(USER_ID);
 });
 
 // better-auth limits requests per client address, and without the resolved one it would count

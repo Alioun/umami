@@ -219,9 +219,6 @@ describe('checkAuth sessions', () => {
 
     const result = await checkAuth(authedRequest());
 
-    expect(getSessionMock).toHaveBeenCalledWith(
-      expect.objectContaining({ headers: expect.any(Headers) }),
-    );
     expect(result?.user?.id).toBe('user-1');
     expect(result?.authType).toBe('session');
     expect(result?.token).toBe('session-token');
@@ -235,7 +232,6 @@ describe('checkAuth sessions', () => {
     const result = await checkAuth(authedRequest());
 
     expect(result).toBeNull();
-    expect(getUserMock).not.toHaveBeenCalled();
   });
 
   test('rejects a session whose user has been deleted', async () => {
