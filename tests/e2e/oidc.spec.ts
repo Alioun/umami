@@ -163,3 +163,97 @@ test('keeps password sign-in working beside OIDC', async ({ page }) => {
   await expect(page).toHaveURL(/\/websites$/);
   expect((await currentUser(page)).username).toBe(umamiUser.username);
 });
+
+// A second provider, added through the admin API, on another issuer of the same mock server. Its
+// group mapping applies only to its own sign-ins, so the tests above stay unmapped.
+test.describe
+  .serial('group mapping of a provider added by an administrator', () => {
+    const slug = `second-${RUN}`;
+    const name = `Second IdP ${RUN}`;
+    const issuer = `http://${IDP_HOST}:${process.env.UMAMI_TEST_OIDC_PORT || '3390'}/second`;
+    let teamId: string;
+
+    async function admin(request: APIRequestContext) {
+      return { Authorization: (await loginViaApi(request)).authorization };
+    }
+
+    async function signInWithSecond(page: Page, subject: string, claims: Claims) {
+      await page.goto('/login');
+      await page.getByRole('button', { name: `Sign in with ${name}`, exact: true }).click();
+      await submitIdpForm(page, subject, claims);
+    }
+
+    async function teamRole(request: APIRequestContext, username: string) {
+      const response = await request.get(`/api/teams/${teamId}/users`, {
+        headers: await admin(request),
+      });
+      const { data } = await response.json();
+
+      return data.find((row: Record<string, any>) => row.user?.username === username)?.role ?? null;
+    }
+
+    test.beforeAll(async ({ request }) => {
+      const headers = await admin(request);
+      const team = await request.post('/api/teams', { headers, data: { name: `Mapped ${RUN}` } });
+
+      teamId = (await team.json())[0].id;
+
+      const provider = await request.post('/api/admin/oidc-providers', {
+        headers,
+        data: {
+          slug,
+          name,
+          discoveryUrl: `${issuer}/.well-known/openid-configuration`,
+          clientId: 'umami-second',
+          clientSecret: 'umami-second-secret',
+          mappings: [
+            { group: 'admins', role: 'admin', teamId: null, teamRole: null },
+            { group: 'staff', role: 'user', teamId, teamRole: 'team-member' },
+            { group: 'leads', role: null, teamId, teamRole: 'team-manager' },
+          ],
+        },
+      });
+
+      expect(provider.status()).toBe(200);
+    });
+
+    test.afterAll(async ({ request }) => {
+      const headers = await admin(request);
+
+      await request.delete(`/api/admin/oidc-providers/${slug}`, { headers });
+      await request.delete(`/api/teams/${teamId}`, { headers });
+    });
+
+    test('the groups decide the role and the team role at every sign-in', async ({
+      page,
+      request,
+    }) => {
+      const username = `mapped-${RUN}`;
+      const claims = { preferred_username: username, email: `${username}@example.com` };
+
+      await signInWithSecond(page, username, { ...claims, groups: ['admins', 'leads'] });
+      await expect(page).toHaveURL(/\/websites$/);
+      expect((await currentUser(page)).role).toBe('admin');
+      expect(await teamRole(request, username)).toBe('team-manager');
+
+      // Logout ends the session at the provider the user signed in through, as its own client.
+      const endSession = page.waitForRequest(r => r.url().startsWith(`${issuer}/endsession`));
+      await logout(page);
+      expect(new URL((await endSession).url()).searchParams.get('client_id')).toBe('umami-second');
+
+      await signInWithSecond(page, username, { ...claims, groups: ['staff'] });
+      await expect(page).toHaveURL(/\/websites$/);
+      expect((await currentUser(page)).role).toBe('user');
+      expect(await teamRole(request, username)).toBe('team-member');
+    });
+
+    test('a user in none of the mapped groups is refused with a message', async ({ page }) => {
+      const username = `unmapped-${RUN}`;
+
+      await signInWithSecond(page, username, { preferred_username: username, groups: ['other'] });
+
+      await expect(page).toHaveURL(/\/login\?.*error=group_not_allowed/);
+      await expect(page.getByText(`Your ${name} account is in none of the groups`)).toBeVisible();
+      expect((await page.request.get('/api/me')).status()).toBe(401);
+    });
+  });
