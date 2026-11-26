@@ -5,17 +5,21 @@ import { getForcedSecureCookies, withSecureCookies } from '@/lib/auth-cookies';
 import { ssoToken } from '@/lib/auth-plugins/sso-token';
 import { twoFactorChallenge } from '@/lib/auth-plugins/two-factor-challenge';
 import { umamiSession } from '@/lib/auth-plugins/umami-session';
-import { AUTH_SESSION_TTL, OIDC_PROVIDER_ID, ROLES } from '@/lib/constants';
+import { AUTH_SESSION_TTL, ROLES } from '@/lib/constants';
 import { secret, uuid } from '@/lib/crypto';
 import { getIpAddress, stripPort } from '@/lib/ip';
-import { getOidcConfig, isOidcConfigured } from '@/lib/oidc';
+import { getGenericOAuthConfig, getOidcProviders, isUsable, type OidcProvider } from '@/lib/oidc';
+import { type GroupMappingResult, mapGroups, readGroups } from '@/lib/oidc-groups';
 import { checkPassword, hashPassword } from '@/lib/password';
 import prisma from '@/lib/prisma';
 import redis from '@/lib/redis';
 import { isTwoFactorSetupRequired } from '@/lib/two-factor/policy';
+import { applyGroupMapping, saveLastGroups } from '@/queries/prisma/oidcProvider';
 
-const BETTER_AUTH = 'better-auth-instance';
 const REDIS_PREFIX = 'ba:';
+
+// The error code of a provider sign-in refused because the user is in none of the mapped groups.
+export const GROUP_NOT_ALLOWED = 'group_not_allowed';
 
 // better-auth reads the client address only from a single-value X-Forwarded-For, and counts
 // every request with a proxy chain in one shared rate-limit bucket. Umami resolves the address
@@ -73,7 +77,37 @@ function withoutProviderTokens(account: Record<string, any>) {
   return { data };
 }
 
-function createAuth() {
+// What the groups of a provider sign-in grant, kept per request until its session is created.
+const pendingMappings = new WeakMap<object, GroupMappingResult>();
+
+/**
+ * Lets a user sign in through a provider only when its groups allow it, and keeps what they grant
+ * for the session hook. Users who sign in with a password are never checked.
+ */
+async function checkGroups(
+  providers: OidcProvider[],
+  source: { oauth?: { providerId: string; profile?: Record<string, unknown> } },
+  context: object,
+) {
+  const provider = providers.find(({ slug }) => slug === source.oauth?.providerId);
+
+  if (!provider) {
+    return;
+  }
+
+  const groups = readGroups(source.oauth.profile, provider.groupsClaim);
+  const result = mapGroups(groups, provider.mappings);
+
+  await saveLastGroups(provider.slug, groups);
+
+  if (!result.allowed) {
+    return { error: GROUP_NOT_ALLOWED };
+  }
+
+  pendingMappings.set(context, result);
+}
+
+function createAuth(providers: OidcProvider[]) {
   return betterAuth({
     secret: secret(),
     // The route handler restores the app base path that Next.js strips (see
@@ -109,6 +143,8 @@ function createAuth() {
           input: false,
         },
       },
+      // Runs for every sign-in, sign-up and account link through an external provider.
+      validateUserInfo: async ({ source }, ctx) => checkGroups(providers, source, ctx.context),
     },
     session: {
       // The analytics visitor table owns the "session" name.
@@ -143,8 +179,8 @@ function createAuth() {
         disableImplicitLinking: true,
         allowDifferentEmails: true,
         // Linking is refused for an untrusted provider unless it reports the email as verified,
-        // which not every provider does. The administrator chose this provider.
-        trustedProviders: [OIDC_PROVIDER_ID],
+        // which not every provider does. The administrator chose these providers.
+        trustedProviders: providers.map(({ slug }) => slug),
       },
     },
     secondaryStorage,
@@ -157,6 +193,15 @@ function createAuth() {
         create: {
           // Decided once, when the session is created, whichever way the user signed in.
           before: async (session: { userId: string }, context) => {
+            const mapping = context && pendingMappings.get(context.context);
+
+            // A provider sign-in gives the user what its groups grant before the session exists,
+            // so a failure leaves the user signed out.
+            if (mapping) {
+              pendingMappings.delete(context.context);
+              await applyGroupMapping(session.userId, mapping);
+            }
+
             return {
               data: {
                 ...session,
@@ -196,9 +241,11 @@ function createAuth() {
       bearer(),
       ssoToken(),
       umamiSession(),
-      ...(isOidcConfigured()
+      ...(providers.length
         ? [
-            genericOAuth({ config: [getOidcConfig()] }) as unknown as BetterAuthPlugin,
+            genericOAuth({
+              config: providers.map(getGenericOAuthConfig),
+            }) as unknown as BetterAuthPlugin,
             twoFactorChallenge(),
           ]
         : []),
@@ -206,17 +253,21 @@ function createAuth() {
   });
 }
 
-let auth: ReturnType<typeof createAuth>;
+let current: { providers: OidcProvider[]; auth: ReturnType<typeof createAuth> } | undefined;
 
-// Created on first use, so importing this module does not open a database connection.
-export function getAuth() {
-  auth ??= globalThis[BETTER_AUTH] || createAuth();
+/**
+ * The better-auth instance for the current OIDC providers. A change to them builds a new one, which
+ * signs nobody out: sessions live in the database. Created on first use, so importing this module
+ * does not open a database connection.
+ */
+export async function getAuth() {
+  const providers = await getOidcProviders();
 
-  if (process.env.NODE_ENV !== 'production') {
-    globalThis[BETTER_AUTH] = auth;
+  if (current?.providers !== providers) {
+    current = { providers, auth: createAuth(providers.filter(isUsable)) };
   }
 
-  return auth;
+  return current.auth;
 }
 
 /**
@@ -224,7 +275,7 @@ export function getAuth() {
  * when the user has none yet.
  */
 export async function setUserPassword(userId: string, newPassword: string) {
-  const ctx = await getAuth().$context;
+  const ctx = await (await getAuth()).$context;
   const passwordHash = await ctx.password.hash(newPassword);
   const account = await ctx.internalAdapter.findCredentialAccount(userId);
 
@@ -242,7 +293,7 @@ export async function setUserPassword(userId: string, newPassword: string) {
 
 /** Revokes every session of a user, in the database and in Redis. */
 export async function revokeUserSessions(userId: string) {
-  const ctx = await getAuth().$context;
+  const ctx = await (await getAuth()).$context;
 
   await ctx.internalAdapter.deleteUserSessions(userId);
 }
@@ -258,7 +309,7 @@ export async function createUserSession(request: Request, userId: string, provid
   const requestHeaders = withClientIp(request.headers);
   requestHeaders.delete('authorization');
 
-  const { headers, response } = await getAuth().api.createUserSession({
+  const { headers, response } = await (await getAuth()).api.createUserSession({
     body: { userId, providerId },
     headers: requestHeaders,
     returnHeaders: true,
@@ -272,7 +323,7 @@ export async function createUserSession(request: Request, userId: string, provid
  * signed in. Returns the headers that renew the cookie, without Set-Cookie when nothing changed.
  */
 export async function refreshUserSession(request: Request) {
-  const { headers } = await getAuth().api.getSession({
+  const { headers } = await (await getAuth()).api.getSession({
     headers: request.headers,
     returnHeaders: true,
   });
@@ -285,7 +336,7 @@ export async function refreshUserSession(request: Request) {
  * that provider has no end-session endpoint. The provider sends the user back to the login page.
  */
 async function getProviderLogoutUrl(request: Request, userId: string, providerId: string) {
-  const ctx = await getAuth().$context;
+  const ctx = await (await getAuth()).$context;
   const provider = ctx.socialProviders.find(({ id }) => id === providerId);
   const account = (await ctx.internalAdapter.findAccounts(userId)).find(
     account => account.providerId === providerId,
@@ -306,7 +357,10 @@ async function getProviderLogoutUrl(request: Request, userId: string, providerId
     'post_logout_redirect_uri',
     new URL(`${process.env.basePath || ''}/login`, origin).toString(),
   );
-  url.searchParams.set('client_id', getOidcConfig().clientId);
+  url.searchParams.set(
+    'client_id',
+    (await getOidcProviders()).find(({ slug }) => slug === providerId)?.clientId,
+  );
 
   return url.toString();
 }
@@ -316,7 +370,7 @@ async function getProviderLogoutUrl(request: Request, userId: string, providerId
  * ends the provider's session too when the user signed in through one that offers it.
  */
 export async function endUserSession(request: Request) {
-  const auth = getAuth();
+  const auth = await getAuth();
   const current = await auth.api.getSession({
     headers: request.headers,
     query: { disableRefresh: true },

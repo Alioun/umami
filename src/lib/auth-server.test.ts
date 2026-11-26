@@ -1,37 +1,77 @@
 import { memoryAdapter } from 'better-auth/adapters/memory';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { encrypt, secret } from '@/lib/crypto';
 
 const ORIGIN = 'http://localhost:3000';
 
+const TEAM_A = '00000000-0000-0000-0000-00000000000a';
+const TEAM_B = '00000000-0000-0000-0000-00000000000b';
+
 const state = vi.hoisted(() => ({
   db: {} as Record<string, Record<string, any>[]>,
+  teamUsers: [] as Record<string, any>[],
+  providers: [] as Record<string, any>[],
+  lastGroups: {} as Record<string, string[]>,
   profile: {} as Record<string, any>,
   endSessionEndpoint: undefined as string | undefined,
   twoFactorEnabled: false,
 }));
 
-// The real configuration runs against better-auth's in-memory adapter instead of Postgres.
+// The real configuration runs against better-auth's in-memory adapter instead of Postgres. Umami's
+// own tables that a provider sign-in writes are kept in memory too.
 vi.mock('better-auth/adapters/prisma', () => ({ prismaAdapter: () => memoryAdapter(state.db) }));
-vi.mock('@/lib/prisma', () => ({
-  default: {
-    client: {
-      twoFactorAuth: { findUnique: async () => state.twoFactorEnabled && { isEnabled: true } },
+vi.mock('@/lib/prisma', () => {
+  const sameMembership = (where: Record<string, any>) => (row: Record<string, any>) =>
+    row.userId === where.userId && row.teamId === where.teamId;
+
+  const client = {
+    twoFactorAuth: { findUnique: async () => state.twoFactorEnabled && { isEnabled: true } },
+    user: {
+      update: async ({ where, data }) =>
+        Object.assign(
+          state.db.user.find(({ id }) => id === where.id),
+          data,
+        ),
     },
+    teamUser: {
+      findMany: async ({ where }) =>
+        state.teamUsers.filter(
+          row => row.userId === where.userId && where.teamId.in.includes(row.teamId),
+        ),
+      create: async ({ data }) => state.teamUsers.push({ ...data }),
+      updateMany: async ({ where, data }) => {
+        for (const row of state.teamUsers.filter(sameMembership(where))) {
+          Object.assign(row, data);
+        }
+      },
+      deleteMany: async ({ where }) => {
+        state.teamUsers = state.teamUsers.filter(row => !sameMembership(where)(row));
+      },
+    },
+  };
+
+  return { default: { client, transaction: (run: (tx: typeof client) => unknown) => run(client) } };
+});
+vi.mock('@/lib/two-factor/policy', () => ({ isTwoFactorSetupRequired: async () => false }));
+vi.mock('@/queries/prisma/oidcProvider', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/queries/prisma/oidcProvider')>()),
+  findOidcProviders: async () => state.providers,
+  saveLastGroups: async (slug: string, groups: string[]) => {
+    state.lastGroups[slug] = groups;
   },
 }));
-vi.mock('@/lib/two-factor/policy', () => ({ isTwoFactorSetupRequired: async () => false }));
 
-// The provider's endpoints are replaced, so no discovery document or token exchange is fetched.
+// The providers' endpoints are replaced, so no discovery document or token exchange is fetched.
 vi.mock('@/lib/oidc', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/oidc')>();
 
   return {
     ...actual,
-    getOidcConfig: () => ({
-      ...actual.getOidcConfig(),
+    getGenericOAuthConfig: (provider: import('@/lib/oidc').OidcProvider) => ({
+      ...actual.getGenericOAuthConfig(provider),
       discoveryUrl: undefined,
-      authorizationUrl: 'https://idp.example/authorize',
-      tokenUrl: 'https://idp.example/token',
+      authorizationUrl: `https://${provider.slug}.example/authorize`,
+      tokenUrl: `https://${provider.slug}.example/token`,
       endSessionEndpoint: state.endSessionEndpoint,
       getToken: async () => ({
         accessToken: 'access-token',
@@ -47,9 +87,34 @@ vi.mock('@/lib/oidc', async importOriginal => {
 
 async function loadAuthServer() {
   vi.resetModules();
-  delete globalThis['better-auth-instance'];
+  // A mocked module survives resetModules, and with it the cached providers.
+  (await import('@/lib/oidc')).invalidateOidcProviders();
 
   return import('./auth-server');
+}
+
+/** A stored provider row as findOidcProviders returns it. */
+function providerRow(slug: string, fields: Record<string, any> = {}) {
+  return {
+    id: `provider-${slug}`,
+    slug,
+    name: null,
+    discoveryUrl: null,
+    clientId: null,
+    clientSecret: null,
+    scopes: null,
+    groupsClaim: 'groups',
+    disableSignup: false,
+    disableProviderLogout: false,
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+    groupMappings: [],
+    ...fields,
+  };
+}
+
+function mapping(group: string, role: string | null, teamId?: string, teamRole?: string) {
+  return { group, role, teamId: teamId ?? null, teamRole: teamRole ?? null };
 }
 
 async function createAuth() {
@@ -60,7 +125,11 @@ async function createAuth() {
  * Starts a provider sign-in from the login page. Returns where the provider's answer leads and
  * the cookies the browser holds afterwards.
  */
-async function signInWithProvider(profile: Record<string, any>, answer = 'code=code') {
+async function signInWithProvider(
+  profile: Record<string, any>,
+  answer = 'code=code',
+  provider = 'oidc',
+) {
   state.profile = profile;
   const auth = await createAuth();
 
@@ -68,7 +137,7 @@ async function signInWithProvider(profile: Record<string, any>, answer = 'code=c
     new Request(`${ORIGIN}/api/auth/sign-in/social`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: ORIGIN },
-      body: JSON.stringify({ provider: 'oidc', callbackURL: '/', errorCallbackURL: '/login' }),
+      body: JSON.stringify({ provider, callbackURL: '/', errorCallbackURL: '/login' }),
     }),
   );
   const { url } = await start.json();
@@ -79,7 +148,7 @@ async function signInWithProvider(profile: Record<string, any>, answer = 'code=c
 
   const callback = await auth.handler(
     new Request(
-      `${ORIGIN}/api/auth/callback/oidc?${answer}&state=${new URL(url).searchParams.get('state')}`,
+      `${ORIGIN}/api/auth/callback/${provider}?${answer}&state=${new URL(url).searchParams.get('state')}`,
       { headers: { cookie } },
     ),
   );
@@ -105,6 +174,9 @@ beforeEach(() => {
   vi.stubEnv('OIDC_DISABLE_PROVIDER_LOGOUT', '');
   state.endSessionEndpoint = 'https://idp.example/logout';
   state.twoFactorEnabled = false;
+  state.teamUsers = [];
+  state.providers = [];
+  state.lastGroups = {};
 
   state.db = {
     user: [
@@ -301,5 +373,216 @@ describe('logout', () => {
     const { redirect } = await endUserSession(logoutRequest(cookie));
 
     expect(redirect).toBeUndefined();
+  });
+});
+
+describe('group mapping', () => {
+  const profile = {
+    sub: 'subject-5',
+    preferred_username: 'erin',
+    email: 'erin@example.com',
+    groups: ['/umami-admins', '/team-a-managers'],
+  };
+
+  const mappings = [
+    mapping('/umami-admins', 'admin'),
+    mapping('/umami-users', 'user'),
+    mapping('/team-a-members', null, TEAM_A, 'team-member'),
+    mapping('/team-a-managers', null, TEAM_A, 'team-manager'),
+    mapping('/team-b', null, TEAM_B, 'team-member'),
+  ];
+
+  function signedInUser() {
+    return state.db.user.find(({ username }) => username === 'erin');
+  }
+
+  function membershipsOf(userId: string) {
+    return Object.fromEntries(
+      state.teamUsers.filter(row => row.userId === userId).map(row => [row.teamId, row.role]),
+    );
+  }
+
+  beforeEach(() => {
+    state.providers = [providerRow('oidc', { groupMappings: mappings })];
+  });
+
+  test('a new user gets the role and the team memberships of their groups', async () => {
+    const { location } = await signInWithProvider(profile);
+    const user = signedInUser();
+
+    expect(location.pathname).toBe('/');
+    expect(user.role).toBe('admin');
+    expect(membershipsOf(user.id)).toEqual({ [TEAM_A]: 'team-manager' });
+    expect(state.lastGroups).toEqual({ oidc: profile.groups });
+  });
+
+  test('every sign-in of a linked user follows the groups: roles are raised and lowered, memberships added and removed', async () => {
+    await signInWithProvider({
+      ...profile,
+      groups: ['/umami-users', '/team-a-members', '/team-b'],
+    });
+    const user = signedInUser();
+    const TEAM_C = '00000000-0000-0000-0000-00000000000c';
+    state.teamUsers.push({
+      id: 'membership-c',
+      userId: user.id,
+      teamId: TEAM_C,
+      role: 'team-owner',
+    });
+
+    expect(user.role).toBe('user');
+    expect(membershipsOf(user.id)).toEqual({
+      [TEAM_A]: 'team-member',
+      [TEAM_B]: 'team-member',
+      [TEAM_C]: 'team-owner',
+    });
+
+    await signInWithProvider(profile);
+
+    expect(signedInUser().role).toBe('admin');
+    // Team B is mapped but none of its groups apply any more. No mapping names team C.
+    expect(membershipsOf(user.id)).toEqual({ [TEAM_A]: 'team-manager', [TEAM_C]: 'team-owner' });
+
+    await signInWithProvider({ ...profile, groups: ['/team-a-members'] });
+
+    expect(signedInUser().role).toBe('user');
+    expect(membershipsOf(user.id)).toEqual({ [TEAM_A]: 'team-member', [TEAM_C]: 'team-owner' });
+  });
+
+  test.each([
+    ['in none of the mapped groups', { groups: ['/other'] }],
+    ['without a groups claim', { groups: undefined }],
+  ])('a user %s cannot sign in', async (_, groups) => {
+    const { location, cookie } = await signInWithProvider({ ...profile, ...groups });
+
+    expect(location.pathname).toBe('/login');
+    expect(location.searchParams.get('error')).toBe('group_not_allowed');
+    expect(cookie).not.toContain('session_token');
+    expect(signedInUser()).toBeUndefined();
+    expect(state.db.authSession).toHaveLength(0);
+  });
+
+  test('a linked user who left every mapped group cannot sign in and keeps no session', async () => {
+    await signInWithProvider(profile);
+    state.db.authSession = [];
+
+    const { location } = await signInWithProvider({ ...profile, groups: [] });
+
+    expect(location.searchParams.get('error')).toBe('group_not_allowed');
+    expect(state.db.authSession).toHaveLength(0);
+  });
+
+  test('a local user without a linked account is never changed', async () => {
+    state.db.user[0].role = 'admin';
+    state.teamUsers.push({
+      id: 'membership-a',
+      userId: 'local-user',
+      teamId: TEAM_B,
+      role: 'team-owner',
+    });
+    const { createUserSession } = await loadAuthServer();
+
+    await createUserSession(
+      new Request(`${ORIGIN}/api/auth/login`, { method: 'POST' }),
+      'local-user',
+    );
+    await signInWithProvider({ ...profile, groups: ['/umami-users'] });
+
+    expect(state.db.user[0].role).toBe('admin');
+    expect(membershipsOf('local-user')).toEqual({ [TEAM_B]: 'team-owner' });
+    expect(signedInUser().role).toBe('user');
+  });
+
+  test('without mappings everyone signs in and nothing changes', async () => {
+    state.providers = [];
+
+    await signInWithProvider({ ...profile, groups: undefined });
+
+    expect(signedInUser().role).toBe('user');
+    expect(state.teamUsers).toEqual([]);
+  });
+});
+
+describe('several providers', () => {
+  const profile = { sub: 'subject-6', preferred_username: 'frank', email: 'frank@example.com' };
+
+  beforeEach(() => {
+    vi.stubGlobal('window', undefined);
+    state.providers = [
+      providerRow('authentik', {
+        name: 'Authentik',
+        discoveryUrl: 'https://authentik.example/.well-known/openid-configuration',
+        clientId: 'umami-authentik',
+        clientSecret: encrypt('authentik-secret', secret()),
+        groupMappings: [mapping('staff', 'view-only')],
+      }),
+    ];
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('a stored provider signs in through its own callback with its own mapping', async () => {
+    const { location } = await signInWithProvider(
+      { ...profile, groups: 'staff' },
+      'code=code',
+      'authentik',
+    );
+
+    expect(location.pathname).toBe('/');
+    expect(state.db.account).toEqual([expect.objectContaining({ providerId: 'authentik' })]);
+    expect(state.db.user.find(({ username }) => username === 'frank').role).toBe('view-only');
+  });
+
+  test("the environment provider's mapping does not apply to another provider", async () => {
+    state.providers.push(providerRow('oidc', { groupMappings: [mapping('/umami', 'admin')] }));
+
+    const { location } = await signInWithProvider(
+      { ...profile, groups: ['staff'] },
+      'code=code',
+      'authentik',
+    );
+
+    expect(location.pathname).toBe('/');
+  });
+
+  test('logout ends the session at the provider it came from, with that provider’s client ID', async () => {
+    const { cookie } = await signInWithProvider(
+      { ...profile, groups: ['staff'] },
+      'code=code',
+      'authentik',
+    );
+    const { endUserSession } = await import('./auth-server');
+
+    const { redirect } = await endUserSession(
+      new Request(`${ORIGIN}/api/auth/logout`, { method: 'POST', headers: { cookie } }),
+    );
+
+    expect(new URL(redirect).searchParams.get('client_id')).toBe('umami-authentik');
+  });
+});
+
+describe('configuration changes', () => {
+  test('a saved change builds a new instance, and the sessions stay valid', async () => {
+    const { cookie } = await signInWithProvider({
+      sub: 'subject-7',
+      preferred_username: 'gina',
+      email: 'gina@example.com',
+    });
+    const { getAuth } = await import('./auth-server');
+    const { invalidateOidcProviders } = await import('@/lib/oidc');
+    const before = await getAuth();
+
+    expect(await getAuth()).toBe(before);
+
+    state.providers = [providerRow('oidc', { name: 'Keycloak' })];
+    invalidateOidcProviders();
+    const after = await getAuth();
+
+    expect(after).not.toBe(before);
+    expect(await after.api.getSession({ headers: new Headers({ cookie }) })).toMatchObject({
+      user: { username: 'gina' },
+    });
   });
 });

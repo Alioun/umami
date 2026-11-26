@@ -14,7 +14,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { useApi, useConfig, useMessages, useUpdateQuery } from '@/components/hooks';
 import { Logo } from '@/components/svg';
-import { OIDC_PROVIDER_ID } from '@/lib/constants';
 import { consumeReturnUrl } from '@/lib/return-url';
 import { setUser } from '@/store/app';
 
@@ -24,28 +23,38 @@ const EXTERNAL_LOGIN_ERRORS: Record<string, string> = {
   USERNAME_IS_ALREADY_TAKEN: 'externalAccountExists',
   account_not_linked: 'externalAccountExists',
   signup_disabled: 'externalSignupDisabled',
+  group_not_allowed: 'externalGroupNotAllowed',
 };
+
+// For a failure before the provider is known, such as an expired sign-in.
+const UNKNOWN_PROVIDER_NAME = 'SSO';
 
 export function LoginForm() {
   const { t, labels, messages, getErrorMessage } = useMessages();
   const router = useRouter();
   const { mutateAsync, error } = useUpdateQuery('/auth/login');
-  const { oidcEnabled, oidcProviderName } = useConfig();
+  const { oidcProviders } = useConfig();
   const { post } = useApi();
+  const searchParams = useSearchParams();
   // The provider redirects back here with an error code when the sign-in fails.
-  const [externalError, setExternalError] = useState(useSearchParams().get('error'));
+  const [externalError, setExternalError] = useState(searchParams.get('error'));
+  const [failedSlug, setFailedSlug] = useState(searchParams.get('provider'));
+  const failedProvider =
+    oidcProviders.find(({ slug }) => slug === failedSlug) ??
+    (oidcProviders.length === 1 ? oidcProviders[0] : undefined);
   const basePath = process.env.basePath || '';
 
-  const handleExternalLogin = async () => {
+  const handleExternalLogin = async (slug: string) => {
     try {
       const { url } = await post('/auth/sign-in/social', {
-        provider: OIDC_PROVIDER_ID,
+        provider: slug,
         callbackURL: `${basePath}${consumeReturnUrl() ?? '/'}`,
-        errorCallbackURL: `${basePath}/login`,
+        errorCallbackURL: `${basePath}/login?provider=${encodeURIComponent(slug)}`,
       });
 
       window.location.href = url;
     } catch {
+      setFailedSlug(slug);
       setExternalError('request_failed');
     }
   };
@@ -76,7 +85,7 @@ export function LoginForm() {
           getErrorMessage(error) ??
           (externalError
             ? t(messages[EXTERNAL_LOGIN_ERRORS[externalError] ?? 'externalLoginFailed'], {
-                name: oidcProviderName,
+                name: failedProvider?.name ?? UNKNOWN_PROVIDER_NAME,
               })
             : undefined)
         }
@@ -110,11 +119,15 @@ export function LoginForm() {
             {t(labels.login)}
           </FormSubmitButton>
         </FormButtons>
-        {oidcEnabled && (
-          <Button data-test="button-login-external" onPress={handleExternalLogin}>
-            {t(labels.loginWith, { name: oidcProviderName })}
+        {oidcProviders.map(({ slug, name }) => (
+          <Button
+            key={slug}
+            data-test="button-login-external"
+            onPress={() => handleExternalLogin(slug)}
+          >
+            {t(labels.loginWith, { name })}
           </Button>
-        )}
+        ))}
       </Form>
     </Column>
   );

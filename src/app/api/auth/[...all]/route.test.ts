@@ -95,6 +95,15 @@ test.each([
   expect(handler).not.toHaveBeenCalled();
 });
 
+test('POST unlink-account removes the account of any provider', async () => {
+  mocks.findAccount.mockResolvedValue({ id: 'account-3', providerId: 'authentik' });
+
+  const response = await call('POST', 'unlink-account', { accountId: 'account-3' });
+
+  expect(handler).toHaveBeenCalledTimes(1);
+  expect(response.status).toBe(200);
+});
+
 test('POST unlink-account does not remove the password account', async () => {
   mocks.findAccount.mockResolvedValue({ id: 'account-2', providerId: 'credential' });
 

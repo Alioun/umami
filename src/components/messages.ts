@@ -555,4 +555,5 @@ export const messages: Record<string, string> = {
   externalAccountExists: 'message.external-account-exists',
   externalSignupDisabled: 'message.external-signup-disabled',
   externalLinkFailed: 'message.external-link-failed',
+  externalGroupNotAllowed: 'message.external-group-not-allowed',
 };

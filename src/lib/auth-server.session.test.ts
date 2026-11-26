@@ -29,6 +29,8 @@ vi.mock('@/lib/redis', () => ({ default: { enabled: false } }));
 
 vi.mock('@/lib/two-factor/policy', () => ({ isTwoFactorSetupRequired: async () => false }));
 
+vi.mock('@/queries/prisma/oidcProvider', () => ({ findOidcProviders: async () => [] }));
+
 vi.mock('@/queries/prisma/user', () => ({
   getUser: async (id: string) => {
     const user = db.user.find(row => row.id === id);
@@ -73,12 +75,12 @@ async function signIn(init: RequestInit = {}, create = createUserSession) {
 }
 
 async function setExpiry(token: string, expiresAt: Date) {
-  const ctx = await getAuth().$context;
+  const ctx = await (await getAuth()).$context;
   await ctx.internalAdapter.updateSession(token, { expiresAt });
 }
 
 async function storedExpiry(token: string) {
-  const ctx = await getAuth().$context;
+  const ctx = await (await getAuth()).$context;
   return (await ctx.internalAdapter.findSession(token)).session.expiresAt.getTime();
 }
 
@@ -152,14 +154,11 @@ test('a session started over plain http gets a cookie without Secure', async () 
 test('COOKIE_SECURE=1 sets a __Secure- cookie and reads it back', async () => {
   vi.stubEnv('COOKIE_SECURE', '1');
   vi.resetModules();
-  delete globalThis['better-auth-instance'];
 
   const server = await import('./auth-server');
   const { checkAuth: check } = await import('@/lib/auth');
   const { cookie, setCookie } = await signIn({}, server.createUserSession);
   const auth = await check(new Request('http://localhost/api/me', { headers: { cookie } }));
-
-  delete globalThis['better-auth-instance'];
 
   expect(setCookie).toMatch(/^__Secure-umami\.session_token=.*; Secure/);
   expect(auth.user.id).toBe(userId);
