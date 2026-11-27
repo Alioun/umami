@@ -27,12 +27,15 @@ test('updateOidcProvider keeps the order of the mappings', async () => {
   );
 
   const [{ data }] = tx.oidcGroupMapping.createMany.mock.calls[0] as any;
-  const sorted = [...data].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
   expect(tx.oidcGroupMapping.deleteMany).toHaveBeenCalledWith({
     where: { oidcProviderId: 'provider-1' },
   });
-  expect(sorted.map(({ group }) => group)).toEqual(groups);
+  expect(data.map(({ group, position }) => [group, position])).toEqual([
+    ['/c', 0],
+    ['/a', 1],
+    ['/b', 2],
+  ]);
 });
 
 test('createOidcProvider leaves a provider with the same slug alone', async () => {

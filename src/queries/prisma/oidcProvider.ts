@@ -21,7 +21,7 @@ export type OidcProviderData = Partial<
 
 export async function findOidcProviders() {
   return prisma.client.oidcProvider.findMany({
-    include: { groupMappings: { orderBy: { createdAt: 'asc' } } },
+    include: { groupMappings: { orderBy: { position: 'asc' } } },
     orderBy: { createdAt: 'asc' },
   });
 }
@@ -37,17 +37,13 @@ async function replaceMappings(
     return;
   }
 
-  // The rows are listed by creation time, and the database would give them all the time the
-  // transaction started, so each gets its own to keep the order the administrator chose.
-  const now = Date.now();
-
   await tx.oidcGroupMapping.deleteMany({ where: { oidcProviderId } });
   await tx.oidcGroupMapping.createMany({
     data: mappings.map((mapping, index) => ({
       ...mapping,
       id: uuid(),
       oidcProviderId,
-      createdAt: new Date(now + index),
+      position: index,
     })),
   });
 }

@@ -27,6 +27,7 @@ CREATE TABLE "oidc_group_mapping" (
     "role" VARCHAR(50),
     "team_id" UUID,
     "team_role" VARCHAR(50),
+    "position" INTEGER NOT NULL,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ(6) NOT NULL,
 

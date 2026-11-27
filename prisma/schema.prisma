@@ -142,6 +142,8 @@ model OidcGroupMapping {
   role           String?  @db.VarChar(50)
   teamId         String?  @map("team_id") @db.Uuid
   teamRole       String?  @map("team_role") @db.VarChar(50)
+  // The order the administrator gave the mappings in.
+  position       Int
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
