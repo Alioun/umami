@@ -48,6 +48,11 @@ export function OidcProviderPage({ slug }: { slug: string }) {
             <OidcProviderSettingsForm provider={provider} />
           </Panel>
           <Panel title={t(labels.groupMappings)} gap="4">
+            <Alert data-test="alert-group-lockout">
+              <AlertTriangle />
+              <AlertTitle>{t(messages.groupMappingsLockoutTitle)}</AlertTitle>
+              <AlertDescription>{t(messages.groupMappingsLockout)}</AlertDescription>
+            </Alert>
             <Text color="muted" style={{ maxWidth: '75ch' }}>
               {t(messages.groupMappingsDescription)}
             </Text>

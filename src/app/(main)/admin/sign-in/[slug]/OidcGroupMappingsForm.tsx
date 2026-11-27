@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  AlertDialog,
   Box,
   Button,
   Column,
@@ -10,12 +11,14 @@ import {
   FormSubmitButton,
   Grid,
   Icon,
+  Modal,
   Row,
   Select,
   Text,
   TextField,
 } from '@umami/react-zen';
 import { useEffect, useState } from 'react';
+import { ControlledDialog } from '@/components/common/ControlledDialog';
 import { DateDistance } from '@/components/common/DateDistance';
 import { type OidcProviderResponse, useApi, useMessages, useUpdateQuery } from '@/components/hooks';
 import { Plus, Trash } from '@/components/icons';
@@ -82,7 +85,10 @@ export function OidcGroupMappingsForm({ provider }: { provider: OidcProviderResp
     ...(teams?.data ?? []).map(({ id, name }) => ({ value: id, label: name })),
   ];
 
-  const handleSubmit = async ({ mappings }: { mappings: MappingValues[] }) => {
+  // The first mapping turns open sign-in into an allow-list, so that save waits for a confirmation.
+  const [firstMappings, setFirstMappings] = useState<MappingValues[] | null>(null);
+
+  const save = async (mappings: MappingValues[]) => {
     await mutateAsync(
       { mappings: mappings.map(fromValues) },
       {
@@ -93,6 +99,20 @@ export function OidcGroupMappingsForm({ provider }: { provider: OidcProviderResp
         },
       },
     );
+  };
+
+  const handleSubmit = async ({ mappings }: { mappings: MappingValues[] }) => {
+    if (!provider.mappings.length && mappings.length) {
+      setFirstMappings(mappings);
+    } else {
+      await save(mappings);
+    }
+  };
+
+  const handleConfirmFirst = async () => {
+    // A failed save shows its error in the form.
+    await save(firstMappings).catch(() => undefined);
+    setFirstMappings(null);
   };
 
   const newRow = (group = ''): MappingValues => ({
@@ -155,6 +175,23 @@ export function OidcGroupMappingsForm({ provider }: { provider: OidcProviderResp
           {t(labels.save)}
         </FormSubmitButton>
       </FormButtons>
+      <ControlledDialog>
+        <Modal isOpen={!!firstMappings} onOpenChange={open => !open && setFirstMappings(null)}>
+          <AlertDialog
+            title={t(labels.limitSignIn)}
+            onConfirm={handleConfirmFirst}
+            onCancel={() => setFirstMappings(null)}
+            confirmLabel={t(labels.limitSignIn)}
+            cancelLabel={t(labels.cancel)}
+            style={{ width: 440 }}
+          >
+            {t(messages.confirmFirstMapping, {
+              name: provider.name,
+              groups: firstMappings?.map(({ group }) => group.trim()).join(', '),
+            })}
+          </AlertDialog>
+        </Modal>
+      </ControlledDialog>
     </Form>
   );
 }

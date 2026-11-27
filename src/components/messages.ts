@@ -488,6 +488,7 @@ export const labels: Record<string, string> = {
   providerIncomplete: 'label.provider-incomplete',
   secretUnreadable: 'label.secret-unreadable',
   lastGroups: 'label.last-groups',
+  limitSignIn: 'label.limit-sign-in',
 };
 
 export const messages: Record<string, string> = {
@@ -590,10 +591,13 @@ export const messages: Record<string, string> = {
   clientSecretUnreadable: 'message.client-secret-unreadable',
   scopesDescription: 'message.scopes-description',
   groupsClaimDescription: 'message.groups-claim-description',
+  groupMappingsLockoutTitle: 'message.group-mappings-lockout-title',
+  groupMappingsLockout: 'message.group-mappings-lockout',
   groupMappingsDescription: 'message.group-mappings-description',
   noLastGroups: 'message.no-last-groups',
   noGroupsSent: 'message.no-groups-sent',
   confirmDeleteProvider: 'message.confirm-delete-provider',
+  confirmFirstMapping: 'message.confirm-first-mapping',
   discoveryFailedTitle: 'message.discovery-failed-title',
   discoveryFailed: 'message.discovery-failed',
 };
