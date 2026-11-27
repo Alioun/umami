@@ -8,7 +8,7 @@ import { useMessages, useOidcProvidersQuery } from '@/components/hooks';
 import { AlertTriangle, KeyRound } from '@/components/icons';
 import { OidcProviderStatus } from '../OidcProviderStatus';
 import { OidcGroupMappingsForm } from './OidcGroupMappingsForm';
-import { OidcProviderDeleteButton } from './OidcProviderDeleteButton';
+import { OidcProviderDelete } from './OidcProviderDelete';
 import { OidcProviderSettingsForm } from './OidcProviderSettingsForm';
 
 export function OidcProviderPage({ slug }: { slug: string }) {
@@ -31,12 +31,7 @@ export function OidcProviderPage({ slug }: { slug: string }) {
             titleSuffix={<OidcProviderStatus provider={provider} />}
             description={provider.slug}
             icon={<KeyRound />}
-          >
-            {/* The provider from the OIDC_* variables stays as long as they are set. */}
-            {provider.stored && !Object.keys(provider.lockedBy).length && (
-              <OidcProviderDeleteButton provider={provider} />
-            )}
-          </PageHeader>
+          />
           <Panel title={t(labels.settings)} gap="4">
             {provider.discovery === 'failed' && (
               <Alert data-test="alert-discovery-failed">
@@ -58,6 +53,12 @@ export function OidcProviderPage({ slug }: { slug: string }) {
             </Text>
             <OidcGroupMappingsForm provider={provider} />
           </Panel>
+          {/* The provider from the OIDC_* variables stays as long as they are set. */}
+          {provider.stored && !Object.keys(provider.lockedBy).length && (
+            <Panel>
+              <OidcProviderDelete provider={provider} />
+            </Panel>
+          )}
         </Column>
       )}
     </LoadingPanel>

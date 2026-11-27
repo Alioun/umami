@@ -489,6 +489,7 @@ export const labels: Record<string, string> = {
   secretUnreadable: 'label.secret-unreadable',
   lastGroups: 'label.last-groups',
   limitSignIn: 'label.limit-sign-in',
+  deleteProvider: 'label.delete-provider',
 };
 
 export const messages: Record<string, string> = {
@@ -598,6 +599,7 @@ export const messages: Record<string, string> = {
   noGroupsSent: 'message.no-groups-sent',
   confirmDeleteProvider: 'message.confirm-delete-provider',
   confirmFirstMapping: 'message.confirm-first-mapping',
+  deleteProviderWarning: 'message.delete-provider-warning',
   discoveryFailedTitle: 'message.discovery-failed-title',
   discoveryFailed: 'message.discovery-failed',
 };
