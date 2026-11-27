@@ -20,7 +20,13 @@ import {
 import { useEffect, useState } from 'react';
 import { ControlledDialog } from '@/components/common/ControlledDialog';
 import { DateDistance } from '@/components/common/DateDistance';
-import { type OidcProviderResponse, useApi, useMessages, useUpdateQuery } from '@/components/hooks';
+import {
+  type OidcProviderResponse,
+  useApi,
+  useMessages,
+  useMobile,
+  useUpdateQuery,
+} from '@/components/hooks';
 import { Plus, Trash } from '@/components/icons';
 import { ROLES } from '@/lib/constants';
 import { TEAM_ROLES, USER_ROLES } from '@/lib/oidc-groups';
@@ -71,6 +77,8 @@ export function OidcGroupMappingsForm({ provider }: { provider: OidcProviderResp
   const queryClient = useQueryClient();
   const [saves, setSaves] = useState(0);
   const { data: teams } = useAllTeams();
+  // On a phone the five columns do not fit, so each mapping becomes a card with labelled fields.
+  const { isPhone } = useMobile();
 
   const roleItems = [
     { value: NONE, label: t(labels.none) },
@@ -130,45 +138,55 @@ export function OidcGroupMappingsForm({ provider }: { provider: OidcProviderResp
       defaultValues={{ mappings: provider.mappings.map(toValues) }}
     >
       <FormFieldArray name="mappings">
-        {({ fields, append, remove, watch, getValues, setValue }) => (
-          <Column gap="4">
-            <LastGroups lastGroups={provider.lastGroups} onAdd={group => append(newRow(group))} />
-            {fields.length > 0 && (
-              <Box overflowX="auto">
-                <Column gap="2" style={{ minWidth: 640 }}>
-                  <Grid columns={COLUMNS} gap="3">
-                    {[labels.group, labels.role, labels.team, labels.teamRole].map(label => (
-                      <Text key={label} size="sm" weight="bold">
-                        {t(label)}
-                      </Text>
-                    ))}
-                  </Grid>
-                  {fields.map(({ id }, index) => (
-                    <MappingRow
-                      key={id}
-                      path={`mappings.${index}`}
-                      teamId={watch(`mappings.${index}.teamId`)}
-                      getValues={getValues}
-                      setValue={setValue}
-                      roleItems={roleItems}
-                      teamItems={teamItems}
-                      teamRoleItems={teamRoleItems}
-                      onRemove={() => remove(index)}
-                    />
-                  ))}
-                </Column>
-              </Box>
-            )}
-            <Row>
-              <Button onPress={() => append(newRow())} data-test="button-add-mapping">
-                <Icon>
-                  <Plus />
-                </Icon>
-                <Text>{t(labels.addMapping)}</Text>
-              </Button>
-            </Row>
-          </Column>
-        )}
+        {({ fields, append, remove, watch, getValues, setValue }) => {
+          const renderRow = (id: string, index: number, isStacked: boolean) => (
+            <MappingRow
+              key={id}
+              path={`mappings.${index}`}
+              teamId={watch(`mappings.${index}.teamId`)}
+              getValues={getValues}
+              setValue={setValue}
+              roleItems={roleItems}
+              teamItems={teamItems}
+              teamRoleItems={teamRoleItems}
+              isStacked={isStacked}
+              onRemove={() => remove(index)}
+            />
+          );
+
+          return (
+            <Column gap="4">
+              <LastGroups lastGroups={provider.lastGroups} onAdd={group => append(newRow(group))} />
+              {fields.length > 0 &&
+                (isPhone ? (
+                  <Column gap="3">
+                    {fields.map(({ id }, index) => renderRow(id, index, true))}
+                  </Column>
+                ) : (
+                  <Box overflowX="auto">
+                    <Column gap="2" style={{ minWidth: 640 }}>
+                      <Grid columns={COLUMNS} gap="3">
+                        {[labels.group, labels.role, labels.team, labels.teamRole].map(label => (
+                          <Text key={label} size="sm" weight="bold">
+                            {t(label)}
+                          </Text>
+                        ))}
+                      </Grid>
+                      {fields.map(({ id }, index) => renderRow(id, index, false))}
+                    </Column>
+                  </Box>
+                ))}
+              <Row>
+                <Button onPress={() => append(newRow())} data-test="button-add-mapping">
+                  <Icon>
+                    <Plus />
+                  </Icon>
+                  <Text>{t(labels.addMapping)}</Text>
+                </Button>
+              </Row>
+            </Column>
+          );
+        }}
       </FormFieldArray>
       <FormButtons>
         <FormSubmitButton variant="primary" isLoading={isPending} data-test="button-save-mappings">
@@ -206,6 +224,7 @@ function MappingRow({
   roleItems,
   teamItems,
   teamRoleItems,
+  isStacked,
   onRemove,
 }: {
   path: string;
@@ -215,6 +234,8 @@ function MappingRow({
   roleItems: Items;
   teamItems: Items;
   teamRoleItems: Items;
+  /** Whether the fields stack in a card with their own labels instead of forming a table row. */
+  isStacked: boolean;
   onRemove: () => void;
 }) {
   const { t, labels } = useMessages();
@@ -229,28 +250,60 @@ function MappingRow({
     }
   }, [hasTeam, path, getValues, setValue]);
 
-  return (
-    <Grid columns={COLUMNS} gap="3" alignItems="start">
-      <FormField name={`${path}.group`} rules={{ required: t(labels.required) }}>
-        <TextField aria-label={t(labels.group)} placeholder="/umami-admins" autoComplete="off" />
+  // A table row names its fields in the header; a card shows each field's label.
+  const label = (text: string) => (isStacked ? { label: text } : {});
+  const ariaLabel = (text: string) => (isStacked ? {} : { 'aria-label': text });
+
+  const group = (
+    <FormField
+      name={`${path}.group`}
+      rules={{ required: t(labels.required) }}
+      {...label(t(labels.group))}
+    >
+      <TextField {...ariaLabel(t(labels.group))} placeholder="/umami-admins" autoComplete="off" />
+    </FormField>
+  );
+  const selects = (
+    <>
+      <FormField name={`${path}.role`} {...label(t(labels.role))}>
+        <Select items={roleItems} triggerProps={ariaLabel(t(labels.role))} />
       </FormField>
-      <FormField name={`${path}.role`}>
-        <Select items={roleItems} triggerProps={{ 'aria-label': t(labels.role) }} />
+      <FormField name={`${path}.teamId`} {...label(t(labels.team))}>
+        <Select items={teamItems} maxHeight="300px" triggerProps={ariaLabel(t(labels.team))} />
       </FormField>
-      <FormField name={`${path}.teamId`}>
-        <Select
-          items={teamItems}
-          maxHeight="300px"
-          triggerProps={{ 'aria-label': t(labels.team) }}
-        />
-      </FormField>
-      <FormField name={`${path}.teamRole`}>
+      <FormField name={`${path}.teamRole`} {...label(t(labels.teamRole))}>
         <Select
           items={hasTeam ? teamRoleItems : [{ value: NONE, label: t(labels.none) }]}
           isDisabled={!hasTeam}
-          triggerProps={{ 'aria-label': t(labels.teamRole) }}
+          triggerProps={ariaLabel(t(labels.teamRole))}
         />
       </FormField>
+    </>
+  );
+
+  if (isStacked) {
+    return (
+      <Column gap="3" padding="4" border borderRadius data-test="mapping-card">
+        {group}
+        <Grid columns="minmax(0, 1fr) minmax(0, 1fr)" gap="3" alignItems="end">
+          {selects}
+          <Row justifyContent="flex-end">
+            <Button variant="quiet" onPress={onRemove}>
+              <Icon>
+                <Trash />
+              </Icon>
+              <Text>{t(labels.remove)}</Text>
+            </Button>
+          </Row>
+        </Grid>
+      </Column>
+    );
+  }
+
+  return (
+    <Grid columns={COLUMNS} gap="3" alignItems="start">
+      {group}
+      {selects}
       <Button variant="quiet" onPress={onRemove} aria-label={t(labels.remove)}>
         <Icon>
           <Trash />

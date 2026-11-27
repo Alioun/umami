@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { OidcProviderResponse } from '@/components/hooks';
-import { render, screen } from '@/test/render';
+import { render, screen, within } from '@/test/render';
 import { OidcGroupMappingsForm } from './OidcGroupMappingsForm';
 
 const mutateAsync = vi.hoisted(() => vi.fn());
+const screenSize = vi.hoisted(() => ({ isPhone: false }));
 
 vi.mock('@/components/hooks', async importOriginal => ({
   ...(await importOriginal<object>()),
@@ -15,6 +16,7 @@ vi.mock('@/components/hooks', async importOriginal => ({
     messages: new Proxy({}, { get: (_, key) => String(key) }),
   }),
   useApi: () => ({ get: vi.fn(), useQuery: () => ({ data: { data: [] } }) }),
+  useMobile: () => screenSize,
   useUpdateQuery: () => ({ mutateAsync, isPending: false, toast: vi.fn() }),
 }));
 
@@ -40,6 +42,7 @@ function createProvider(fields: Partial<OidcProviderResponse> = {}): OidcProvide
 
 beforeEach(() => {
   mutateAsync.mockReset();
+  screenSize.isPhone = false;
   mutateAsync.mockResolvedValue({});
 });
 
@@ -87,5 +90,24 @@ describe('OidcGroupMappingsForm', () => {
 
     expect(mutateAsync).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: 'limitSignIn' })).not.toBeInTheDocument();
+  });
+
+  test('on a phone each mapping is a card that labels its fields and keeps Remove in reach', async () => {
+    screenSize.isPhone = true;
+    const { user } = render(
+      <OidcGroupMappingsForm
+        provider={createProvider({
+          mappings: [{ group: '/admins', role: 'admin', teamId: null, teamRole: null }],
+        })}
+      />,
+    );
+
+    const card = screen.getByTestId('mapping-card');
+
+    for (const label of ['group', 'role', 'team', 'teamRole']) {
+      expect(within(card).getByText(label)).toBeInTheDocument();
+    }
+    await user.click(within(card).getByRole('button', { name: 'remove' }));
+    expect(screen.queryByTestId('mapping-card')).not.toBeInTheDocument();
   });
 });
