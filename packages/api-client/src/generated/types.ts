@@ -177,12 +177,12 @@ export interface paths {
     put?: never;
     /**
      * Update an OIDC provider
-     * @description Changes the settings of an OIDC provider. Settings left out keep their value, and given mappings replace the old ones. Settings an environment variable sets are not changed.
+     * @description Changes the settings of an OIDC provider. Settings left out keep their value, and given mappings replace the old ones. Settings an environment variable sets are not changed. The discovery URL cannot change while accounts are linked through the provider.
      */
     post: operations['postAdminOidcProvidersSlug'];
     /**
      * Remove an OIDC provider
-     * @description Removes a stored OIDC provider and its group mapping. Accounts linked through it stay, and work again if a provider with the same slug is added.
+     * @description Removes a stored OIDC provider with its group mapping, the accounts linked through it and the sessions it started.
      */
     delete: operations['deleteAdminOidcProvidersSlug'];
     options?: never;
@@ -4308,6 +4308,24 @@ export interface operations {
            *         "code": "unauthorized",
            *         "message": "Unauthorized.",
            *         "status": 401
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Forbidden. */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "forbidden",
+           *         "message": "Forbidden.",
+           *         "status": 403
            *       }
            *     }
            */

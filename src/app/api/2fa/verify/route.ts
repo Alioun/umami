@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getBearerToken } from '@/lib/auth';
+import { getBearerToken, isCrossSiteRequest } from '@/lib/auth';
 import { createUserSession } from '@/lib/auth-server';
 import { PARTIAL_AUTH_TOKEN_TYPE, ROLES } from '@/lib/constants';
 import { secret } from '@/lib/crypto';
@@ -8,7 +8,14 @@ import { addTeamBillingStatus } from '@/lib/load';
 import { hasDefaultPassword } from '@/lib/password';
 import prisma from '@/lib/prisma';
 import { parseRequest } from '@/lib/request';
-import { badRequest, json, notFound, serviceUnavailable, unauthorized } from '@/lib/response';
+import {
+  badRequest,
+  forbidden,
+  json,
+  notFound,
+  serviceUnavailable,
+  unauthorized,
+} from '@/lib/response';
 import { verifyBackupCode } from '@/lib/two-factor/backup-codes';
 import {
   decryptSecret,
@@ -30,6 +37,10 @@ export async function POST(request: Request) {
     z.object({ token: z.string().length(6) }).strict(),
     z.object({ backupCode: z.string().min(1) }).strict(),
   ]);
+
+  if (isCrossSiteRequest(request)) {
+    return forbidden();
+  }
 
   const rawToken = getBearerToken(request);
   if (!rawToken) {

@@ -20,7 +20,8 @@ const mocks = vi.hoisted(() => ({
   applyGroupMapping: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({
+vi.mock('@/lib/auth', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/lib/auth')>()),
   getBearerToken: mocks.getBearerToken,
 }));
 
@@ -292,6 +293,19 @@ describe('a partial token from a provider sign-in', () => {
       teams: new Map([['team-1', 'team-member']]),
     });
     expect((await response.json()).user).toMatchObject({ role: 'view-only', isAdmin: false });
+  });
+
+  test('is refused when another site sends it from the browser', async () => {
+    const response = await POST(
+      new Request('http://localhost/api/2fa/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'text/plain', 'sec-fetch-site': 'cross-site' },
+        body: JSON.stringify({ token: '123456' }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(mocks.createUserSession).not.toHaveBeenCalled();
   });
 
   test('grants nothing for a wrong code', async () => {

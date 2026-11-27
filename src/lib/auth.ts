@@ -77,9 +77,10 @@ const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 /**
  * The browser attaches the session cookie by itself, so a request that changes state has to come
  * from Umami's own pages. Browsers report where a request came from in Sec-Fetch-Site. Clients
- * that send the token as a bearer header are not affected.
+ * that send the token as a bearer header are not affected. The login routes check it too, since
+ * another site could otherwise sign the browser into an account of its choosing.
  */
-function isCrossSiteRequest(request: Request) {
+export function isCrossSiteRequest(request: Request) {
   const site = request.headers.get('sec-fetch-site');
 
   return (
