@@ -132,12 +132,20 @@ export async function applyGroupMapping(userId: string, { role, teams }: GroupMa
       await tx.user.update({ where: { id: userId }, data: { role } });
     }
 
-    const memberships = await tx.teamUser.findMany({
-      where: { userId, teamId: { in: [...teams.keys()] } },
+    const teamIds = [...teams.keys()];
+    const memberships = await tx.teamUser.findMany({ where: { userId, teamId: { in: teamIds } } });
+    // Another instance can still hold a mapping whose team was deleted a moment ago.
+    const existing = await tx.team.findMany({
+      where: { id: { in: teamIds }, deletedAt: null },
+      select: { id: true },
     });
 
     for (const [teamId, teamRole] of teams) {
       const current = memberships.filter(membership => membership.teamId === teamId);
+
+      if (!existing.some(({ id }) => id === teamId)) {
+        continue;
+      }
 
       if (!teamRole) {
         if (current.length) {

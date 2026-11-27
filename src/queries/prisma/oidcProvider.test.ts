@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest';
-import { createOidcProvider, updateOidcProvider } from './oidcProvider';
+import { applyGroupMapping, createOidcProvider, updateOidcProvider } from './oidcProvider';
 
 const tx = vi.hoisted(() => ({
   oidcProvider: {
@@ -7,6 +7,14 @@ const tx = vi.hoisted(() => ({
     update: vi.fn(async () => ({ id: 'provider-1' })),
   },
   oidcGroupMapping: { deleteMany: vi.fn(), createMany: vi.fn() },
+  user: { update: vi.fn() },
+  team: { findMany: vi.fn(async () => [{ id: 'team-kept' }]) },
+  teamUser: {
+    findMany: vi.fn(async () => []),
+    create: vi.fn(),
+    deleteMany: vi.fn(),
+    updateMany: vi.fn(),
+  },
 }));
 
 vi.mock('@/lib/prisma', () => ({
@@ -46,4 +54,19 @@ test('createOidcProvider leaves a provider with the same slug alone', async () =
   expect(await createOidcProvider('authentik', { name: 'Authentik' })).toBe(false);
   expect(tx.oidcProvider.update).not.toHaveBeenCalled();
   expect(tx.oidcGroupMapping.deleteMany).not.toHaveBeenCalled();
+});
+
+test('applyGroupMapping adds no membership in a team that no longer exists', async () => {
+  await applyGroupMapping('user-1', {
+    allowed: true,
+    teams: new Map([
+      ['team-kept', 'team-member'],
+      ['team-deleted', 'team-member'],
+    ]),
+  } as any);
+
+  expect(tx.teamUser.create).toHaveBeenCalledTimes(1);
+  expect(tx.teamUser.create).toHaveBeenCalledWith({
+    data: expect.objectContaining({ userId: 'user-1', teamId: 'team-kept' }),
+  });
 });
