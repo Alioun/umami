@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getBearerToken: vi.fn(),
@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   claimOtp: vi.fn(),
   verifyTotp: vi.fn(),
   secret: vi.fn(),
+  applyGroupMapping: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({
@@ -36,6 +37,7 @@ vi.mock('@/lib/jwt', () => ({
 }));
 
 vi.mock('@/queries/prisma', () => ({
+  applyGroupMapping: mocks.applyGroupMapping,
   getAllUserTeams: mocks.getAllUserTeams,
   getUser: mocks.getUser,
 }));
@@ -99,6 +101,7 @@ beforeEach(() => {
   mocks.claimOtp.mockReset();
   mocks.verifyTotp.mockReset();
   mocks.secret.mockReset();
+  mocks.applyGroupMapping.mockReset();
 
   mocks.getBearerToken.mockReturnValue('partial-token');
   mocks.secret.mockReturnValue('app-secret');
@@ -250,4 +253,51 @@ test('POST does not check the code when no attempt can be reserved', async () =>
   expect(mocks.verifyTotp).not.toHaveBeenCalled();
   expect(mocks.verifyBackupCode).not.toHaveBeenCalled();
   expect(mocks.createUserSession).not.toHaveBeenCalled();
+});
+
+describe('a partial token from a provider sign-in', () => {
+  const grant = { role: 'view-only', teams: [['team-1', 'team-member']] };
+
+  function verify() {
+    return POST(
+      new Request('http://localhost/api/2fa/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer partial-token' },
+        body: JSON.stringify({ token: '123456' }),
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    mocks.parseSecureToken.mockReturnValue({
+      type: 'partial-auth',
+      userId: 'user-1',
+      providerId: 'oidc',
+      grant,
+    });
+  });
+
+  test('applies what the groups grant once the code is right, before the session exists', async () => {
+    mocks.createUserSession.mockImplementation(async () => {
+      expect(mocks.applyGroupMapping).toHaveBeenCalled();
+      return { token: 'full-auth-token', headers: new Headers() };
+    });
+
+    const response = await verify();
+
+    expect(response.status).toBe(200);
+    expect(mocks.applyGroupMapping).toHaveBeenCalledWith('user-1', {
+      allowed: true,
+      role: 'view-only',
+      teams: new Map([['team-1', 'team-member']]),
+    });
+    expect((await response.json()).user).toMatchObject({ role: 'view-only', isAdmin: false });
+  });
+
+  test('grants nothing for a wrong code', async () => {
+    mocks.verifyTotp.mockResolvedValue(false);
+
+    expect((await verify()).status).toBe(400);
+    expect(mocks.applyGroupMapping).not.toHaveBeenCalled();
+  });
 });

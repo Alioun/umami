@@ -120,6 +120,18 @@ async function checkGroups(
   pendingMappings.set(context, result);
 }
 
+function takePendingMapping(context: object) {
+  const mapping = pendingMappings.get(context);
+
+  pendingMappings.delete(context);
+
+  return mapping;
+}
+
+async function isTwoFactorEnabled(userId: string) {
+  return !!(await prisma.client.twoFactorAuth.findUnique({ where: { userId } }))?.isEnabled;
+}
+
 function createAuth(providers: OidcProvider[]) {
   return betterAuth({
     secret: secret(),
@@ -209,8 +221,9 @@ function createAuth(providers: OidcProvider[]) {
             const mapping = context && pendingMappings.get(context.context);
 
             // A provider sign-in gives the user what its groups grant before the session exists,
-            // so a failure leaves the user signed out.
-            if (mapping) {
+            // so a failure leaves the user signed out. A user with 2FA is not signed in yet: the
+            // challenge ends this session and takes the grant along to the second step.
+            if (mapping && !(await isTwoFactorEnabled(session.userId))) {
               pendingMappings.delete(context.context);
               await applyGroupMapping(session.userId, mapping);
             }
@@ -259,7 +272,7 @@ function createAuth(providers: OidcProvider[]) {
             genericOAuth({
               config: providers.map(getGenericOAuthConfig),
             }) as unknown as BetterAuthPlugin,
-            twoFactorChallenge(),
+            twoFactorChallenge({ takeGrant: takePendingMapping }),
           ]
         : []),
     ],

@@ -519,6 +519,33 @@ describe('group mapping', () => {
     expect(membershipsOf('local-user')).toEqual({});
   });
 
+  test('a user with 2FA gets what the groups grant only from the second step', async () => {
+    vi.stubEnv('TWO_FACTOR_ENCRYPTION_KEY', '0'.repeat(64));
+    state.twoFactorEnabled = true;
+    const { location } = await signInWithProvider(profile);
+    const user = signedInUser();
+    const { parseSecureToken } = await import('@/lib/jwt');
+    const { readPartialTokenGrant } = await import('@/lib/two-factor/partial-token');
+
+    expect(location.pathname).toBe('/login/two-factor');
+    expect(user.role).toBe('user');
+    expect(membershipsOf(user.id)).toEqual({});
+
+    const partial = parseSecureToken(
+      decodeURIComponent(location.hash.slice('#token='.length)),
+      secret(),
+    ) as Record<string, any>;
+
+    expect(readPartialTokenGrant(partial)).toEqual({
+      allowed: true,
+      role: 'admin',
+      teams: new Map([
+        [TEAM_A, 'team-manager'],
+        [TEAM_B, null],
+      ]),
+    });
+  });
+
   test('without mappings everyone signs in and nothing changes', async () => {
     state.providers = [];
 

@@ -15,10 +15,11 @@ import {
   getTwoFactorConfigurationError,
   isTwoFactorConfigured,
 } from '@/lib/two-factor/crypto';
+import { readPartialTokenGrant } from '@/lib/two-factor/partial-token';
 import { reserveAttempt, resetRateLimit } from '@/lib/two-factor/rate-limit';
 import { claimOtp } from '@/lib/two-factor/replay-prevention';
 import { verifyTotp } from '@/lib/two-factor/totp';
-import { getAllUserTeams, getUser } from '@/queries/prisma';
+import { applyGroupMapping, getAllUserTeams, getUser } from '@/queries/prisma';
 
 export async function POST(request: Request) {
   if (process.env.CLOUD_MODE) {
@@ -131,7 +132,15 @@ export async function POST(request: Request) {
     await resetRateLimit(userId);
   }
 
-  const { id, role, createdAt, username } = user;
+  // What the groups of a provider sign-in grant takes effect only once the second factor is right.
+  const grant = readPartialTokenGrant(payload);
+
+  if (grant) {
+    await applyGroupMapping(userId, grant);
+  }
+
+  const { id, createdAt, username } = user;
+  const role = grant?.role ?? user.role;
   const passwordChangeRequired = hasDefaultPassword(user);
   const { token: fullToken, headers } = await createUserSession(request, id, payload.providerId);
 
