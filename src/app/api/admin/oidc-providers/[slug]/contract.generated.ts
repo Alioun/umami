@@ -12,7 +12,7 @@ const operation1 = defineOperation({
     operationId: 'deleteAdminOidcProvidersSlug',
     summary: 'Remove an OIDC provider',
     description:
-      'Removes a stored OIDC provider and its group mapping. Accounts linked through it stay, and work again if a provider with the same slug is added.',
+      'Removes a stored OIDC provider with its group mapping, the accounts linked through it and the sessions it started.',
     tags: ['Administration'],
     parameters: [
       {
@@ -90,7 +90,7 @@ const operation2 = defineOperation({
     operationId: 'postAdminOidcProvidersSlug',
     summary: 'Update an OIDC provider',
     description:
-      'Changes the settings of an OIDC provider. Settings left out keep their value, and given mappings replace the old ones. Settings an environment variable sets are not changed.',
+      'Changes the settings of an OIDC provider. Settings left out keep their value, and given mappings replace the old ones. Settings an environment variable sets are not changed. The discovery URL cannot change while accounts are linked through the provider.',
     tags: ['Administration'],
     parameters: [
       {
@@ -147,21 +147,51 @@ const operation2 = defineOperation({
                   },
                   required: ['groups', 'signedInAt'],
                 },
-                slug: {
-                  type: 'string',
-                  description: 'URL slug used to access the resource.',
-                },
                 name: {
                   type: 'string',
                   description: 'Display name of the resource.',
+                },
+                scopes: {
+                  type: 'string',
+                },
+                lockedBy: {
+                  type: 'object',
+                  properties: {
+                    name: {
+                      type: 'string',
+                      description: 'Display name of the resource.',
+                    },
+                    discoveryUrl: {
+                      type: 'string',
+                    },
+                    clientId: {
+                      type: 'string',
+                    },
+                    clientSecret: {
+                      type: 'string',
+                    },
+                    scopes: {
+                      type: 'string',
+                    },
+                    disableSignup: {
+                      type: 'string',
+                    },
+                    disableProviderLogout: {
+                      type: 'string',
+                    },
+                  },
+                },
+                stored: {
+                  type: 'boolean',
+                },
+                slug: {
+                  type: 'string',
+                  description: 'URL slug used to access the resource.',
                 },
                 discoveryUrl: {
                   type: 'string',
                 },
                 clientId: {
-                  type: 'string',
-                },
-                scopes: {
                   type: 'string',
                 },
                 groupsClaim: {
@@ -273,51 +303,21 @@ const operation2 = defineOperation({
                     ],
                   },
                 },
-                lockedBy: {
-                  type: 'object',
-                  properties: {
-                    name: {
-                      type: 'string',
-                      description: 'Display name of the resource.',
-                    },
-                    discoveryUrl: {
-                      type: 'string',
-                    },
-                    clientId: {
-                      type: 'string',
-                    },
-                    clientSecret: {
-                      type: 'string',
-                    },
-                    scopes: {
-                      type: 'string',
-                    },
-                    disableSignup: {
-                      type: 'string',
-                    },
-                    disableProviderLogout: {
-                      type: 'string',
-                    },
-                  },
-                },
-                stored: {
-                  type: 'boolean',
-                },
               },
               required: [
                 'clientSecret',
                 'lastGroups',
-                'slug',
                 'name',
+                'scopes',
+                'lockedBy',
+                'stored',
+                'slug',
                 'discoveryUrl',
                 'clientId',
-                'scopes',
                 'groupsClaim',
                 'disableSignup',
                 'disableProviderLogout',
                 'mappings',
-                'lockedBy',
-                'stored',
               ],
             },
           },

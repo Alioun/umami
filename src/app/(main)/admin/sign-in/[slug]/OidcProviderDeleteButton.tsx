@@ -33,7 +33,7 @@ export function OidcProviderDeleteButton({ provider }: { provider: OidcProviderR
           isDanger
           style={{ width: 400 }}
         >
-          {t(messages.confirmDeleteProvider, { name: provider.name, id: provider.slug })}
+          {t(messages.confirmDeleteProvider, { name: provider.name })}
         </AlertDialog>
       </Modal>
     </DialogTrigger>

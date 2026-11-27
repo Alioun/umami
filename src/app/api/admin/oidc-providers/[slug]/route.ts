@@ -1,10 +1,11 @@
+import { removeOidcProvider } from '@/lib/auth-server';
 import { getOidcProvider, invalidateOidcProviders } from '@/lib/oidc';
 import { oidcProviderSchema, toProviderData, toProviderResponse } from '@/lib/oidc-admin';
 import { parseRequest } from '@/lib/request';
 import { badRequest, json, notFound, ok, unauthorized } from '@/lib/response';
 import { canManageOidcProviders } from '@/permissions';
 import {
-  deleteOidcProvider,
+  findLinkedUserIds,
   getLastGroups,
   hasMissingTeams,
   saveOidcProvider,
@@ -36,6 +37,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     return badRequest({ message: 'A mapping names a team that does not exist.' });
   }
 
+  // A linked account is found by the slug and the subject, and a subject is unique only at one
+  // issuer. Another issuer's user with the same subject would sign in as the linked user.
+  const changesIssuer =
+    body.discoveryUrl !== undefined &&
+    body.discoveryUrl !== provider.discoveryUrl &&
+    !provider.lockedBy.discoveryUrl;
+
+  if (changesIssuer && (await findLinkedUserIds(slug)).length) {
+    return badRequest({
+      message:
+        'Users have linked accounts through this provider, so its discovery URL cannot change. Remove the provider and add it again to use another issuer, and its users link their accounts again.',
+    });
+  }
+
   await saveOidcProvider(slug, toProviderData(body, provider.lockedBy), body.mappings);
   invalidateOidcProviders();
 
@@ -65,7 +80,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ s
     return notFound();
   }
 
-  await deleteOidcProvider(slug);
+  await removeOidcProvider(slug);
   invalidateOidcProviders();
 
   return ok();

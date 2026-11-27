@@ -26,6 +26,25 @@ vi.mock('@/lib/prisma', () => {
 
   const client = {
     twoFactorAuth: { findUnique: async () => state.twoFactorEnabled && { isEnabled: true } },
+    account: {
+      findMany: async ({ where }) =>
+        state.db.account.filter(row => row.providerId === where.providerId),
+      deleteMany: async ({ where }) => {
+        state.db.account = state.db.account.filter(row => row.providerId !== where.providerId);
+      },
+    },
+    authSession: {
+      deleteMany: async ({ where }) => {
+        state.db.authSession = state.db.authSession.filter(
+          row => row.providerId !== where.providerId,
+        );
+      },
+    },
+    oidcProvider: {
+      deleteMany: async ({ where }) => {
+        state.providers = state.providers.filter(row => row.slug !== where.slug);
+      },
+    },
     user: {
       update: async ({ where, data }) =>
         Object.assign(
@@ -557,6 +576,47 @@ describe('several providers', () => {
     const { redirect } = await endUserSession(logoutRequest(cookie));
 
     expect(new URL(redirect).searchParams.get('client_id')).toBe('umami-authentik');
+  });
+});
+
+describe('removing a provider', () => {
+  const row = () =>
+    providerRow('authentik', {
+      discoveryUrl: 'https://authentik.example/.well-known/openid-configuration',
+      clientId: 'umami-authentik',
+      clientSecret: encrypt('authentik-secret', secret()),
+    });
+
+  test('ends its links and its sessions, so a new provider with its slug cannot sign in as the old user', async () => {
+    state.providers = [row()];
+    const profile = { sub: 'subject-8', preferred_username: 'hank', email: 'hank@example.com' };
+    const { cookie } = await signInWithProvider(profile, { provider: 'authentik' });
+    const hank = state.db.user.find(({ username }) => username === 'hank');
+    const passwordCookie = await createSession(hank.id);
+    const { getAuth, removeOidcProvider } = await import('./auth-server');
+
+    await removeOidcProvider('authentik');
+    const auth = await getAuth();
+
+    expect(state.providers).toEqual([]);
+    expect(state.db.account).toEqual([]);
+    expect(await auth.api.getSession({ headers: new Headers({ cookie }) })).toBeNull();
+    expect(
+      await auth.api.getSession({ headers: new Headers({ cookie: passwordCookie }) }),
+    ).toMatchObject({ user: { id: hank.id } });
+
+    // Another issuer behind the same slug sends the same subject for someone else.
+    state.providers = [row()];
+    await signInWithProvider(
+      { ...profile, preferred_username: 'ivy', email: 'ivy@example.com' },
+      { provider: 'authentik' },
+    );
+
+    expect(state.db.account).toEqual([
+      expect.objectContaining({
+        userId: state.db.user.find(({ username }) => username === 'ivy').id,
+      }),
+    ]);
   });
 });
 

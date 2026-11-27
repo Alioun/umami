@@ -56,12 +56,12 @@ export const operationDescriptions: Record<string, OperationDescription> = {
   'POST /api/admin/oidc-providers/{slug}': {
     summary: 'Update an OIDC provider',
     description:
-      'Changes the settings of an OIDC provider. Settings left out keep their value, and given mappings replace the old ones. Settings an environment variable sets are not changed.',
+      'Changes the settings of an OIDC provider. Settings left out keep their value, and given mappings replace the old ones. Settings an environment variable sets are not changed. The discovery URL cannot change while accounts are linked through the provider.',
   },
   'DELETE /api/admin/oidc-providers/{slug}': {
     summary: 'Remove an OIDC provider',
     description:
-      'Removes a stored OIDC provider and its group mapping. Accounts linked through it stay, and work again if a provider with the same slug is added.',
+      'Removes a stored OIDC provider with its group mapping, the accounts linked through it and the sessions it started.',
   },
   'GET /api/admin/teams': {
     summary: 'List all teams',

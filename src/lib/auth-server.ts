@@ -20,7 +20,12 @@ import { checkPassword, hashPassword } from '@/lib/password';
 import prisma from '@/lib/prisma';
 import redis from '@/lib/redis';
 import { isTwoFactorSetupRequired } from '@/lib/two-factor/policy';
-import { applyGroupMapping, saveLastGroups } from '@/queries/prisma/oidcProvider';
+import {
+  applyGroupMapping,
+  deleteOidcProvider,
+  findLinkedUserIds,
+  saveLastGroups,
+} from '@/queries/prisma/oidcProvider';
 
 const REDIS_PREFIX = 'ba:';
 
@@ -304,6 +309,26 @@ export async function revokeUserSessions(userId: string) {
   const ctx = await (await getAuth()).$context;
 
   await ctx.internalAdapter.deleteUserSessions(userId);
+}
+
+/**
+ * Removes a stored provider with the accounts linked through it and the sessions it started.
+ * With Redis, better-auth keeps sessions only there, so they end through better-auth first.
+ */
+export async function removeOidcProvider(slug: string) {
+  const ctx = await (await getAuth()).$context;
+
+  for (const userId of await findLinkedUserIds(slug)) {
+    const tokens = (await ctx.internalAdapter.listSessions(userId))
+      .filter(session => (session as { providerId?: string }).providerId === slug)
+      .map(({ token }) => token);
+
+    if (tokens.length) {
+      await ctx.internalAdapter.deleteSessions(tokens);
+    }
+  }
+
+  await deleteOidcProvider(slug);
 }
 
 /**

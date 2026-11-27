@@ -55,21 +55,51 @@ const operation1 = defineOperation({
                         },
                         required: ['groups', 'signedInAt'],
                       },
-                      slug: {
-                        type: 'string',
-                        description: 'URL slug used to access the resource.',
-                      },
                       name: {
                         type: 'string',
                         description: 'Display name of the resource.',
+                      },
+                      scopes: {
+                        type: 'string',
+                      },
+                      lockedBy: {
+                        type: 'object',
+                        properties: {
+                          name: {
+                            type: 'string',
+                            description: 'Display name of the resource.',
+                          },
+                          discoveryUrl: {
+                            type: 'string',
+                          },
+                          clientId: {
+                            type: 'string',
+                          },
+                          clientSecret: {
+                            type: 'string',
+                          },
+                          scopes: {
+                            type: 'string',
+                          },
+                          disableSignup: {
+                            type: 'string',
+                          },
+                          disableProviderLogout: {
+                            type: 'string',
+                          },
+                        },
+                      },
+                      stored: {
+                        type: 'boolean',
+                      },
+                      slug: {
+                        type: 'string',
+                        description: 'URL slug used to access the resource.',
                       },
                       discoveryUrl: {
                         type: 'string',
                       },
                       clientId: {
-                        type: 'string',
-                      },
-                      scopes: {
                         type: 'string',
                       },
                       groupsClaim: {
@@ -181,51 +211,21 @@ const operation1 = defineOperation({
                           ],
                         },
                       },
-                      lockedBy: {
-                        type: 'object',
-                        properties: {
-                          name: {
-                            type: 'string',
-                            description: 'Display name of the resource.',
-                          },
-                          discoveryUrl: {
-                            type: 'string',
-                          },
-                          clientId: {
-                            type: 'string',
-                          },
-                          clientSecret: {
-                            type: 'string',
-                          },
-                          scopes: {
-                            type: 'string',
-                          },
-                          disableSignup: {
-                            type: 'string',
-                          },
-                          disableProviderLogout: {
-                            type: 'string',
-                          },
-                        },
-                      },
-                      stored: {
-                        type: 'boolean',
-                      },
                     },
                     required: [
                       'clientSecret',
                       'lastGroups',
-                      'slug',
                       'name',
+                      'scopes',
+                      'lockedBy',
+                      'stored',
+                      'slug',
                       'discoveryUrl',
                       'clientId',
-                      'scopes',
                       'groupsClaim',
                       'disableSignup',
                       'disableProviderLogout',
                       'mappings',
-                      'lockedBy',
-                      'stored',
                     ],
                   },
                 },
@@ -328,21 +328,51 @@ const operation2 = defineOperation({
                   },
                   required: ['groups', 'signedInAt'],
                 },
-                slug: {
-                  type: 'string',
-                  description: 'URL slug used to access the resource.',
-                },
                 name: {
                   type: 'string',
                   description: 'Display name of the resource.',
+                },
+                scopes: {
+                  type: 'string',
+                },
+                lockedBy: {
+                  type: 'object',
+                  properties: {
+                    name: {
+                      type: 'string',
+                      description: 'Display name of the resource.',
+                    },
+                    discoveryUrl: {
+                      type: 'string',
+                    },
+                    clientId: {
+                      type: 'string',
+                    },
+                    clientSecret: {
+                      type: 'string',
+                    },
+                    scopes: {
+                      type: 'string',
+                    },
+                    disableSignup: {
+                      type: 'string',
+                    },
+                    disableProviderLogout: {
+                      type: 'string',
+                    },
+                  },
+                },
+                stored: {
+                  type: 'boolean',
+                },
+                slug: {
+                  type: 'string',
+                  description: 'URL slug used to access the resource.',
                 },
                 discoveryUrl: {
                   type: 'string',
                 },
                 clientId: {
-                  type: 'string',
-                },
-                scopes: {
                   type: 'string',
                 },
                 groupsClaim: {
@@ -454,51 +484,21 @@ const operation2 = defineOperation({
                     ],
                   },
                 },
-                lockedBy: {
-                  type: 'object',
-                  properties: {
-                    name: {
-                      type: 'string',
-                      description: 'Display name of the resource.',
-                    },
-                    discoveryUrl: {
-                      type: 'string',
-                    },
-                    clientId: {
-                      type: 'string',
-                    },
-                    clientSecret: {
-                      type: 'string',
-                    },
-                    scopes: {
-                      type: 'string',
-                    },
-                    disableSignup: {
-                      type: 'string',
-                    },
-                    disableProviderLogout: {
-                      type: 'string',
-                    },
-                  },
-                },
-                stored: {
-                  type: 'boolean',
-                },
               },
               required: [
                 'clientSecret',
                 'lastGroups',
-                'slug',
                 'name',
+                'scopes',
+                'lockedBy',
+                'stored',
+                'slug',
                 'discoveryUrl',
                 'clientId',
-                'scopes',
                 'groupsClaim',
                 'disableSignup',
                 'disableProviderLogout',
                 'mappings',
-                'lockedBy',
-                'stored',
               ],
             },
           },

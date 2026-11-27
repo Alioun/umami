@@ -87,8 +87,27 @@ export async function hasMissingTeams(mappings: GroupMapping[] = []) {
   return count !== teamIds.length;
 }
 
+/** The users who linked an account through the provider. */
+export async function findLinkedUserIds(slug: string) {
+  const accounts = await prisma.client.account.findMany({
+    where: { providerId: slug },
+    select: { userId: true },
+  });
+
+  return [...new Set(accounts.map(({ userId }) => userId))];
+}
+
+/**
+ * Removes a provider with the accounts linked through it and the sessions it started. better-auth
+ * finds a linked account by the slug and the subject alone, so an account left behind would sign
+ * in whoever has that subject at the next provider with this slug.
+ */
 export async function deleteOidcProvider(slug: string) {
-  await prisma.client.oidcProvider.deleteMany({ where: { slug } });
+  await prisma.transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.account.deleteMany({ where: { providerId: slug } });
+    await tx.authSession.deleteMany({ where: { providerId: slug } });
+    await tx.oidcProvider.deleteMany({ where: { slug } });
+  });
 }
 
 /**

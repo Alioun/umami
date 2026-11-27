@@ -588,7 +588,7 @@
     "group-mappings-description": "At every sign-in through this provider, Umami sets the user's role and their membership in the teams below from the groups the provider sends. Teams that no mapping names stay as they are. A user in no group with a role gets the role User. Once a mapping exists, users in none of these groups cannot sign in.",
     "no-last-groups": "Nobody has signed in through this provider yet. Keycloak sends groups as full paths, such as /staff/devs.",
     "no-groups-sent": "The last sign-in sent no groups.",
-    "confirm-delete-provider": "Users can no longer sign in through {name}. Their linked accounts stay, and work again if a provider with the ID {id} is added."
+    "confirm-delete-provider": "Users can no longer sign in through {name}. The accounts linked through it are removed, and its sessions end."
   },
   "errorTracking": {
     "title": "Errors",

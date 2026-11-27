@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   user: { id: 'admin-1', isAdmin: true } as Record<string, any> | null,
   rows: [] as Record<string, any>[],
   teams: [] as string[],
+  linkedUsers: {} as Record<string, string[]>,
 }));
 
 vi.mock('@/lib/auth', () => ({
@@ -50,7 +51,11 @@ vi.mock('@/queries/prisma', () => ({
       row.groupMappings = mappings;
     }
   },
-  deleteOidcProvider: async (slug: string) => {
+  findLinkedUserIds: async (slug: string) => state.linkedUsers[slug] ?? [],
+}));
+
+vi.mock('@/lib/auth-server', () => ({
+  removeOidcProvider: async (slug: string) => {
     state.rows = state.rows.filter(row => row.slug !== slug);
   },
 }));
@@ -90,6 +95,7 @@ beforeEach(async () => {
   state.user = { id: 'admin-1', isAdmin: true };
   state.rows = [];
   state.teams = [TEAM_A];
+  state.linkedUsers = {};
   (await import('@/lib/oidc')).invalidateOidcProviders();
 });
 
@@ -229,6 +235,29 @@ describe('providers', () => {
     await POST(request('POST', '', AUTHENTIK));
 
     expect((await POST(request('POST', '', AUTHENTIK))).status).toBe(400);
+  });
+
+  test('keeps the discovery URL while accounts are linked through the provider', async () => {
+    await POST(request('POST', '', AUTHENTIK));
+    state.linkedUsers.authentik = ['user-1'];
+    const update = (fields: Record<string, unknown>) =>
+      UPDATE(request('POST', '/authentik', fields), params('authentik'));
+
+    const moved = await update({
+      discoveryUrl: 'https://other.example/.well-known/openid-configuration',
+    });
+    const cleared = await update({ discoveryUrl: null });
+    const unchanged = await update({ discoveryUrl: AUTHENTIK.discoveryUrl, name: 'Renamed' });
+
+    expect(moved.status).toBe(400);
+    expect((await moved.json()).error.message).toMatch(/linked accounts/);
+    expect(cleared.status).toBe(400);
+    expect(unchanged.status).toBe(200);
+    expect(state.rows[0]).toMatchObject({ discoveryUrl: AUTHENTIK.discoveryUrl, name: 'Renamed' });
+
+    state.linkedUsers = {};
+
+    expect((await update({ discoveryUrl: null })).status).toBe(200);
   });
 
   test('updating or deleting an unknown provider is not found', async () => {
