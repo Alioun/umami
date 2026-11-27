@@ -23,27 +23,32 @@ vi.mock('@/queries/prisma', () => ({
   }),
   hasMissingTeams: async (mappings = []) =>
     mappings.some(({ teamId }) => teamId && !state.teams.includes(teamId)),
-  saveOidcProvider: async (slug: string, data: Record<string, any>, mappings?: any[]) => {
-    let row = state.rows.find(row => row.slug === slug);
-
-    if (!row) {
-      row = {
-        id: `provider-${slug}`,
-        slug,
-        name: null,
-        discoveryUrl: null,
-        clientId: null,
-        clientSecret: null,
-        scopes: null,
-        groupsClaim: 'groups',
-        disableSignup: false,
-        disableProviderLogout: false,
-        createdAt: new Date(0),
-        updatedAt: new Date(0),
-        groupMappings: [],
-      };
-      state.rows.push(row);
+  createOidcProvider: async (slug: string, data: Record<string, any>, mappings: any[] = []) => {
+    if (state.rows.some(row => row.slug === slug)) {
+      return false;
     }
+
+    state.rows.push({
+      id: `provider-${slug}`,
+      slug,
+      name: null,
+      discoveryUrl: null,
+      clientId: null,
+      clientSecret: null,
+      scopes: null,
+      groupsClaim: 'groups',
+      disableSignup: false,
+      disableProviderLogout: false,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+      ...data,
+      groupMappings: mappings,
+    });
+
+    return true;
+  },
+  updateOidcProvider: async (slug: string, data: Record<string, any>, mappings?: any[]) => {
+    const row = state.rows.find(row => row.slug === slug);
 
     Object.assign(row, data);
 
@@ -235,6 +240,25 @@ describe('providers', () => {
     await POST(request('POST', '', AUTHENTIK));
 
     expect((await POST(request('POST', '', AUTHENTIK))).status).toBe(400);
+  });
+
+  test('refuses a slug that another instance took since the providers were last read', async () => {
+    await GET(request('GET'));
+    state.rows.push({ slug: 'authentik', name: 'Kept', groupMappings: [] });
+
+    const response = await POST(request('POST', '', { ...AUTHENTIK, name: 'Overwrite' }));
+
+    expect(response.status).toBe(400);
+    expect(state.rows).toEqual([expect.objectContaining({ slug: 'authentik', name: 'Kept' })]);
+  });
+
+  test('the first change to the environment provider stores its row', async () => {
+    vi.stubEnv('OIDC_DISCOVERY_URL', 'https://idp.example/.well-known/openid-configuration');
+
+    const response = await UPDATE(request('POST', '/oidc', { name: 'Keycloak' }), params('oidc'));
+
+    expect(response.status).toBe(200);
+    expect(state.rows).toEqual([expect.objectContaining({ slug: 'oidc', name: 'Keycloak' })]);
   });
 
   test('keeps the discovery URL while accounts are linked through the provider', async () => {

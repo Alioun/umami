@@ -52,21 +52,37 @@ async function replaceMappings(
   });
 }
 
-/**
- * Stores a provider's settings, and its mappings when they are given, which replace the old ones.
- * Creates the row when the provider has none yet.
- */
-export async function saveOidcProvider(
+/** Stores a new provider with its mappings. Returns false when another provider has the slug. */
+export async function createOidcProvider(
+  slug: string,
+  data: OidcProviderData,
+  mappings: GroupMapping[] = [],
+) {
+  try {
+    await prisma.transaction(async (tx: Prisma.TransactionClient) => {
+      const { id } = await tx.oidcProvider.create({ data: { ...data, id: uuid(), slug } });
+
+      await replaceMappings(tx, id, mappings);
+    });
+  } catch (e: any) {
+    if (e?.code === 'P2002') {
+      return false;
+    }
+
+    throw e;
+  }
+
+  return true;
+}
+
+/** Changes a stored provider's settings, and its mappings when they are given. */
+export async function updateOidcProvider(
   slug: string,
   data: OidcProviderData,
   mappings?: GroupMapping[],
 ) {
   await prisma.transaction(async (tx: Prisma.TransactionClient) => {
-    const { id } = await tx.oidcProvider.upsert({
-      where: { slug },
-      create: { ...data, id: uuid(), slug },
-      update: data,
-    });
+    const { id } = await tx.oidcProvider.update({ where: { slug }, data });
 
     await replaceMappings(tx, id, mappings);
   });

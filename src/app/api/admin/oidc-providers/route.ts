@@ -8,7 +8,7 @@ import {
 import { parseRequest } from '@/lib/request';
 import { badRequest, json, notFound, unauthorized } from '@/lib/response';
 import { canManageOidcProviders } from '@/permissions';
-import { getLastGroups, hasMissingTeams, saveOidcProvider } from '@/queries/prisma';
+import { createOidcProvider, getLastGroups, hasMissingTeams } from '@/queries/prisma';
 
 export async function GET(request: Request) {
   if (process.env.CLOUD_MODE) {
@@ -50,16 +50,21 @@ export async function POST(request: Request) {
   }
 
   const { slug, ...input } = body;
+  const exists = () => badRequest({ message: 'A provider with this name already exists.' });
 
+  // The environment provider can exist without a stored row.
   if (await getOidcProvider(slug)) {
-    return badRequest({ message: 'A provider with this name already exists.' });
+    return exists();
   }
 
   if (await hasMissingTeams(input.mappings)) {
     return badRequest({ message: 'A mapping names a team that does not exist.' });
   }
 
-  await saveOidcProvider(slug, toProviderData(input), input.mappings ?? []);
+  if (!(await createOidcProvider(slug, toProviderData(input), input.mappings))) {
+    return exists();
+  }
+
   invalidateOidcProviders();
 
   return json(toProviderResponse(await getOidcProvider(slug)));

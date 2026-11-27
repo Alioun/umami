@@ -5,10 +5,11 @@ import { parseRequest } from '@/lib/request';
 import { badRequest, json, notFound, ok, unauthorized } from '@/lib/response';
 import { canManageOidcProviders } from '@/permissions';
 import {
+  createOidcProvider,
   findLinkedUserIds,
   getLastGroups,
   hasMissingTeams,
-  saveOidcProvider,
+  updateOidcProvider,
 } from '@/queries/prisma';
 
 export async function POST(request: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -51,7 +52,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     });
   }
 
-  await saveOidcProvider(slug, toProviderData(body, provider.lockedBy), body.mappings);
+  const data = toProviderData(body, provider.lockedBy);
+
+  // Only the environment provider exists without a row, until its first change here.
+  if (provider.stored || !(await createOidcProvider(slug, data, body.mappings))) {
+    await updateOidcProvider(slug, data, body.mappings);
+  }
   invalidateOidcProviders();
 
   const [updated, lastGroups] = await Promise.all([getOidcProvider(slug), getLastGroups()]);
