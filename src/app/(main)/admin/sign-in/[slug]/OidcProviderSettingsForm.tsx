@@ -61,7 +61,10 @@ export function OidcProviderSettingsForm({ provider }: { provider: OidcProviderR
   // Remounting the form after a save shows the stored values and empties the secret field.
   const [saves, setSaves] = useState(0);
 
-  const callbackUrl = `${globalThis.location?.origin}${process.env.basePath || ''}/api/auth/callback/${slug}`;
+  const baseUrl = `${globalThis.location?.origin}${process.env.basePath || ''}`;
+  const callbackUrl = `${baseUrl}/api/auth/callback/${slug}`;
+  // Where the provider sends the user after a logout that ended its session too.
+  const postLogoutUrl = `${baseUrl}/login`;
   const lockNote = (field: keyof typeof lockedBy) =>
     lockedBy[field] && t(messages.setByEnv, { name: lockedBy[field] });
 
@@ -98,6 +101,14 @@ export function OidcProviderSettingsForm({ provider }: { provider: OidcProviderR
         isReadOnly
         allowCopy
         data-test="input-callback-url"
+      />
+      <TextField
+        label={t(labels.postLogoutRedirectUri)}
+        description={t(messages.postLogoutRedirectUriDescription)}
+        value={postLogoutUrl}
+        isReadOnly
+        allowCopy
+        data-test="input-post-logout-url"
       />
       <FormField
         name="name"
