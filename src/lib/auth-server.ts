@@ -174,9 +174,9 @@ function createAuth(providers: OidcProvider[]) {
     session: {
       // The analytics visitor table owns the "session" name.
       modelName: 'authSession',
-      // A session in use is extended once a day (better-auth's default updateAge), but only
-      // by refreshUserSession: checkAuth reads without refreshing, because a request that is
-      // only being authenticated cannot set the renewed cookie.
+      // A session in use is extended once a day (better-auth's default updateAge). A cookie
+      // session is extended only by refreshUserSession, because a request that is only being
+      // authenticated cannot set the renewed cookie. checkAuth extends a bearer token session.
       expiresIn: AUTH_SESSION_TTL,
       // Unlinking an account is the only exposed endpoint with a session age limit, and Umami
       // has no way to ask the user to sign in again for it.

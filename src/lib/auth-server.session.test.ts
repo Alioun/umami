@@ -135,6 +135,25 @@ test('a bearer token session is extended and keeps its token', async () => {
   expect(auth.user.id).toBe(USER_ID);
 });
 
+test('any request with a bearer token extends its session once a day', async () => {
+  const { token } = await signIn();
+  const request = () =>
+    checkAuth(
+      new Request('http://localhost/api/websites', {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    );
+  const recent = await storedExpiry(token);
+
+  expect((await request()).user.id).toBe(USER_ID);
+  expect(await storedExpiry(token)).toBe(recent);
+
+  await setExpiry(token, new Date(Date.now() + 2 * DAY));
+
+  expect((await request()).user.id).toBe(USER_ID);
+  expect(await storedExpiry(token)).toBeGreaterThan(Date.now() + AUTH_SESSION_TTL * 1000 - DAY);
+});
+
 test('a session started behind a TLS-terminating proxy gets a Secure cookie', async () => {
   const { cookie, setCookie } = await signIn({ headers: { 'x-forwarded-proto': 'https' } });
   const auth = await checkAuth(new Request('http://localhost/api/me', { headers: { cookie } }));

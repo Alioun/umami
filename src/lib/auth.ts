@@ -99,11 +99,12 @@ async function getAuthSession(request: Request) {
   }
 
   try {
-    // The response of an ordinary route carries no renewed cookie, so it does not extend the
-    // session either. /api/auth/verify does that (refreshUserSession).
+    // The response of an ordinary route carries no renewed cookie, so a cookie session is
+    // extended only by /api/auth/verify (refreshUserSession). A bearer token stays the same when
+    // its session is extended, so a script that calls the API stays signed in while it does.
     return await (await getAuth()).api.getSession({
       headers: request.headers,
-      query: { disableRefresh: true },
+      query: { disableRefresh: !getBearerToken(request) },
     });
   } catch (e) {
     log(e);
