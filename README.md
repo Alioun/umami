@@ -78,6 +78,8 @@ When a user who signed in through the provider logs out, Umami also ends their s
 
 Behind a reverse proxy, the redirect URI and the post-logout redirect URI are built from the `X-Forwarded-Host` and `X-Forwarded-Proto` headers. Set `BETTER_AUTH_URL=https://<your-umami-host>` if the proxy does not send them.
 
+Umami reads the user's groups only when they sign in, and it does not check back with the provider afterwards. A user or group removed at the provider loses access at their next sign-in, or when their Umami session ends. A user with a linked account who signs in with a password skips the group mapping. When an administrator links a provider account to a user, that user gets the role their groups map at their next sign-in through the provider.
+
 ### Build the Application
 
 ```bash
