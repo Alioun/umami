@@ -543,6 +543,21 @@ test.describe('Admin', () => {
       expect(unknown.status).toBe(404);
     });
 
+    test('deleting a mapped team keeps the mapping, which still decides who may sign in', async ({
+      admin,
+    }) => {
+      await deleteTeam(admin, teamId);
+      teamId = '';
+
+      const listed = await admin.get('/api/admin/oidc-providers');
+      const provider = listed.body.providers.find((provider: any) => provider.slug === slug);
+
+      expect(provider.mappings).toEqual([
+        { group: '/umami-admins', role: ROLES.admin, teamId: null, teamRole: null },
+        { group: '/staff/devs', role: null, teamId: null, teamRole: null },
+      ]);
+    });
+
     test('DELETE /api/admin/oidc-providers/{slug} removes a stored provider', async ({ admin }) => {
       const deleted = await admin.del(`/api/admin/oidc-providers/${slug}`);
       const again = await admin.del(`/api/admin/oidc-providers/${slug}`);

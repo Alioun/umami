@@ -146,7 +146,8 @@ model OidcGroupMapping {
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   provider OidcProvider @relation(fields: [oidcProviderId], references: [id], onDelete: Cascade)
-  team     Team?        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  // deleteTeam clears teamId and teamRole first: the group still decides who may sign in.
+  team     Team?        @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
   @@index([oidcProviderId])
   @@index([teamId])

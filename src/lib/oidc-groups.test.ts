@@ -34,6 +34,13 @@ describe('readGroups', () => {
 });
 
 describe('mapGroups', () => {
+  test('a mapping whose team was deleted still decides who may sign in, and grants nothing else', () => {
+    const mappings = [{ group: '/staff', role: null, teamId: null, teamRole: 'team-owner' }] as any;
+
+    expect(mapGroups(['/staff'], mappings)).toEqual({ allowed: true, teams: new Map() });
+    expect(mapGroups(['/other'], mappings)).toEqual({ allowed: false, teams: new Map() });
+  });
+
   test('lets everyone sign in and changes nothing when the provider has no mappings', () => {
     expect(mapGroups(['/anything'], [])).toEqual({ allowed: true, teams: new Map() });
     expect(mapGroups([], [])).toEqual({ allowed: true, teams: new Map() });
