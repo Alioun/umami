@@ -583,6 +583,7 @@
     "no-oidc-providers": "No provider is set up. Add one to offer sign-in through an OpenID Connect provider such as Keycloak.",
     "set-by-env": "Set by {name}.",
     "provider-id-description": "Lowercase letters, digits and hyphens. The ID is part of the callback URL and cannot be changed later.",
+    "invalid-provider-id": "Use lowercase letters, digits and hyphens, up to 50 characters.",
     "callback-url-description": "Register this address as a redirect URI of the client at the provider.",
     "post-logout-redirect-uri-description": "Register this address as a post-logout redirect URI of the client too. Logout ends the session at the provider, which then sends the user back here.",
     "client-secret-stored": "A secret is stored. Enter a new one to replace it.",

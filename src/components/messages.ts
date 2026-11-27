@@ -583,6 +583,7 @@ export const messages: Record<string, string> = {
   noOidcProviders: 'message.no-oidc-providers',
   setByEnv: 'message.set-by-env',
   providerIdDescription: 'message.provider-id-description',
+  invalidProviderId: 'message.invalid-provider-id',
   callbackUrlDescription: 'message.callback-url-description',
   postLogoutRedirectUriDescription: 'message.post-logout-redirect-uri-description',
   clientSecretStored: 'message.client-secret-stored',
