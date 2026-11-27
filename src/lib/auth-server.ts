@@ -279,7 +279,58 @@ function createAuth(providers: OidcProvider[]) {
   });
 }
 
-let current: { providers: OidcProvider[]; auth: ReturnType<typeof createAuth> } | undefined;
+// better-auth fetches each discovery document without a time limit while it builds an instance,
+// and every request that needs the instance waits for that. So Umami fetches the documents first,
+// and a provider whose document does not arrive in time stays off the instance until a later try.
+const DISCOVERY_TIMEOUT = 5000;
+const DISCOVERY_RETRY_INTERVAL = 60_000;
+
+async function isDiscoverable(provider: OidcProvider) {
+  const { discoveryUrl } = getGenericOAuthConfig(provider);
+
+  if (!discoveryUrl) {
+    return true;
+  }
+
+  try {
+    const response = await fetch(discoveryUrl, { signal: AbortSignal.timeout(DISCOVERY_TIMEOUT) });
+
+    await response.json();
+
+    if (response.ok) {
+      return true;
+    }
+
+    console.error(`OIDC provider "${provider.slug}": discovery answered ${response.status}.`);
+  } catch (e) {
+    console.error(`OIDC provider "${provider.slug}": discovery failed.`, e);
+  }
+
+  return false;
+}
+
+interface AuthInstance {
+  auth: ReturnType<typeof createAuth>;
+  /** Whether a usable provider was left off because its discovery failed. */
+  incomplete: boolean;
+  builtAt: number;
+}
+
+async function buildAuth(providers: OidcProvider[]): Promise<AuthInstance> {
+  const usable = providers.filter(isUsable);
+  const discoverable = await Promise.all(usable.map(isDiscoverable));
+  const reachable = usable.filter((_, index) => discoverable[index]);
+
+  return {
+    auth: createAuth(reachable),
+    incomplete: reachable.length < usable.length,
+    builtAt: Date.now(),
+  };
+}
+
+let current:
+  | { providers: OidcProvider[]; instance: Promise<AuthInstance>; retry?: Promise<void> }
+  | undefined;
 
 /**
  * The better-auth instance for the current OIDC providers. A change to them builds a new one, which
@@ -290,10 +341,25 @@ export async function getAuth() {
   const providers = await getOidcProviders();
 
   if (current?.providers !== providers) {
-    current = { providers, auth: createAuth(providers.filter(isUsable)) };
+    current = { providers, instance: buildAuth(providers) };
   }
 
-  return current.auth;
+  const entry = current;
+  const instance = await entry.instance;
+
+  // The instance in use keeps serving while a new one tries the providers left off again.
+  if (
+    instance.incomplete &&
+    !entry.retry &&
+    Date.now() - instance.builtAt > DISCOVERY_RETRY_INTERVAL
+  ) {
+    entry.retry = buildAuth(providers).then(next => {
+      entry.instance = Promise.resolve(next);
+      entry.retry = undefined;
+    });
+  }
+
+  return instance.auth;
 }
 
 /**

@@ -1,5 +1,7 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { memoryAdapter } from 'better-auth/adapters/memory';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { encrypt, secret } from '@/lib/crypto';
 
 const ORIGIN = 'http://localhost:3000';
@@ -15,6 +17,7 @@ const state = vi.hoisted(() => ({
   profile: {} as Record<string, any>,
   endSessionEndpoint: undefined as string | undefined,
   twoFactorEnabled: false,
+  discoveryUrls: {} as Record<string, string>,
 }));
 
 // The real configuration runs against better-auth's in-memory adapter instead of Postgres. Umami's
@@ -88,7 +91,7 @@ vi.mock('@/lib/oidc', async importOriginal => {
     ...actual,
     getGenericOAuthConfig: (provider: import('@/lib/oidc').OidcProvider) => ({
       ...actual.getGenericOAuthConfig(provider),
-      discoveryUrl: undefined,
+      discoveryUrl: state.discoveryUrls[provider.slug],
       authorizationUrl: `https://${provider.slug}.example/authorize`,
       tokenUrl: `https://${provider.slug}.example/token`,
       endSessionEndpoint: state.endSessionEndpoint,
@@ -218,6 +221,7 @@ beforeEach(() => {
   state.teamUsers = [];
   state.providers = [];
   state.lastGroups = {};
+  state.discoveryUrls = {};
 
   state.db = {
     user: [
@@ -645,6 +649,67 @@ describe('removing a provider', () => {
       }),
     ]);
   });
+});
+
+describe('discovery', () => {
+  // Answers once `answering` is set, and leaves the request hanging before.
+  let answering = false;
+  const server = createServer((request, response) => {
+    if (answering) {
+      const origin = `http://${request.headers.host}`;
+
+      response.setHeader('content-type', 'application/json');
+      response.end(
+        JSON.stringify({
+          issuer: origin,
+          authorization_endpoint: `${origin}/authorize`,
+          token_endpoint: `${origin}/token`,
+        }),
+      );
+    }
+  });
+
+  beforeAll(async () => {
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  });
+
+  afterAll(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+
+  const providerIds = async (auth: { $context: Promise<{ socialProviders: { id: string }[] }> }) =>
+    (await auth.$context).socialProviders.map(({ id }) => id).sort();
+
+  test('a provider whose discovery hangs is left off until it answers, and sign-in keeps working', async () => {
+    const { port } = server.address() as AddressInfo;
+    const usable = {
+      clientId: 'umami',
+      clientSecret: encrypt('secret', secret()),
+      discoveryUrl: 'https://unused.example/.well-known/openid-configuration',
+    };
+    state.providers = [providerRow('hanging', usable), providerRow('authentik', usable)];
+    state.discoveryUrls = { hanging: `http://127.0.0.1:${port}/.well-known/openid-configuration` };
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { getAuth } = await loadAuthServer();
+
+    const auth = await getAuth();
+    const cookie = await createSession('local-user');
+
+    expect(await providerIds(auth)).toEqual(['authentik', 'oidc']);
+    expect(await auth.api.getSession({ headers: new Headers({ cookie }) })).toMatchObject({
+      user: { id: 'local-user' },
+    });
+
+    answering = true;
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now + 61_000);
+
+    await vi.waitFor(async () =>
+      expect(await providerIds(await getAuth())).toEqual(['authentik', 'hanging', 'oidc']),
+    );
+    vi.mocked(Date.now).mockRestore();
+  }, 20_000);
 });
 
 describe('configuration changes', () => {
