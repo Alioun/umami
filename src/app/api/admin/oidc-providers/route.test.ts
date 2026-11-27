@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   rows: [] as Record<string, any>[],
   teams: [] as string[],
   linkedUsers: {} as Record<string, string[]>,
+  discovery: {} as Record<string, 'ok' | 'failed'>,
 }));
 
 vi.mock('@/lib/auth', () => ({
@@ -60,6 +61,7 @@ vi.mock('@/queries/prisma', () => ({
 }));
 
 vi.mock('@/lib/auth-server', () => ({
+  getDiscoveryStatuses: async () => state.discovery,
   removeOidcProvider: async (slug: string) => {
     state.rows = state.rows.filter(row => row.slug !== slug);
   },
@@ -101,6 +103,7 @@ beforeEach(async () => {
   state.rows = [];
   state.teams = [TEAM_A];
   state.linkedUsers = {};
+  state.discovery = {};
   (await import('@/lib/oidc')).invalidateOidcProviders();
 });
 
@@ -129,6 +132,23 @@ describe('access', () => {
     expect((await POST(request('POST', '', AUTHENTIK))).status).toBe(404);
     expect((await UPDATE(request('POST', '/oidc', {}), params('oidc'))).status).toBe(404);
     expect((await DELETE(request('DELETE', '/oidc'), params('oidc'))).status).toBe(404);
+  });
+});
+
+describe('discovery', () => {
+  test('shows whether Umami could fetch the discovery document of each provider', async () => {
+    await POST(request('POST', '', AUTHENTIK));
+    await POST(request('POST', '', { ...AUTHENTIK, slug: 'keycloak' }));
+    await POST(request('POST', '', { slug: 'dex', name: 'Dex' }));
+    state.discovery = { authentik: 'ok', keycloak: 'failed' };
+
+    const { providers } = await (await GET(request('GET'))).json();
+
+    expect(Object.fromEntries(providers.map(({ slug, discovery }) => [slug, discovery]))).toEqual({
+      authentik: 'ok',
+      keycloak: 'failed',
+      dex: 'unchecked',
+    });
   });
 });
 

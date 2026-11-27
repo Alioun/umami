@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { DiscoveryStatus } from '@/lib/auth-server';
 import { CREDENTIAL_PROVIDER_ID } from '@/lib/constants';
 import { encrypt, secret } from '@/lib/crypto';
 import type { OidcProvider } from '@/lib/oidc';
@@ -61,11 +62,23 @@ export function toProviderData(
   return Object.fromEntries(Object.entries(data).filter(([field]) => !(field in lockedBy)));
 }
 
-/** A provider as the API shows it: the client secret only as whether one is set. */
-export function toProviderResponse(provider: OidcProvider, lastGroups?: LastGroups) {
+/**
+ * A provider as the API shows it: the client secret only as whether one is set. The discovery
+ * status is "unchecked" until Umami has fetched the provider's discovery document.
+ */
+export function toProviderResponse(
+  provider: OidcProvider,
+  lastGroups?: LastGroups,
+  discovery?: DiscoveryStatus,
+) {
   const { clientSecret, ...fields } = provider;
 
-  return { ...fields, clientSecret: clientSecret.status, lastGroups: lastGroups ?? null };
+  return {
+    ...fields,
+    clientSecret: clientSecret.status,
+    discovery: discovery ?? ('unchecked' as const),
+    lastGroups: lastGroups ?? null,
+  };
 }
 
 export type OidcProviderResponse = ReturnType<typeof toProviderResponse>;

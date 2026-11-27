@@ -11,7 +11,9 @@ vi.mock('@/components/hooks', () => ({
       providerId: 'Provider ID',
       groupMappings: 'Group mappings',
       status: 'Status',
-      providerActive: 'On the login page',
+      providerReachable: 'Reachable',
+      providerUnreachable: 'Unreachable',
+      providerUnchecked: 'Not checked',
       providerIncomplete: 'Incomplete',
       secretUnreadable: 'Secret unreadable',
     },
@@ -35,21 +37,24 @@ function createProvider(
     mappings: [],
     lockedBy: {},
     stored: true,
+    discovery: 'ok',
     lastGroups: null,
     ...fields,
   };
 }
 
 describe('OidcProvidersTable', () => {
-  test('links each provider and shows whether the login page offers it', () => {
+  test('links each provider and shows whether sign-in through it can work', () => {
     render(
       <OidcProvidersTable
         data={[
           createProvider('keycloak', {
             mappings: [{ group: '/umami-admins', role: 'admin', teamId: null, teamRole: null }],
           }),
-          createProvider('authentik', { clientSecret: 'missing' }),
-          createProvider('dex', { clientSecret: 'unreadable' }),
+          createProvider('broken', { discovery: 'failed' }),
+          createProvider('fresh', { discovery: 'unchecked' }),
+          createProvider('authentik', { clientSecret: 'missing', discovery: 'unchecked' }),
+          createProvider('dex', { clientSecret: 'unreadable', discovery: 'unchecked' }),
         ]}
       />,
     );
@@ -58,7 +63,9 @@ describe('OidcProvidersTable', () => {
       'href',
       '/admin/sign-in/keycloak',
     );
-    expect(screen.getByText('On the login page')).toBeInTheDocument();
+    expect(screen.getByText('Reachable')).toBeInTheDocument();
+    expect(screen.getByText('Unreachable')).toBeInTheDocument();
+    expect(screen.getByText('Not checked')).toBeInTheDocument();
     expect(screen.getByText('Incomplete')).toBeInTheDocument();
     expect(screen.getByText('Secret unreadable')).toBeInTheDocument();
     expect(screen.getByText('1')).toBeInTheDocument();

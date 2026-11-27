@@ -151,7 +151,7 @@ export interface paths {
     };
     /**
      * List OIDC providers
-     * @description Returns every OIDC provider with its group mapping, which settings environment variables set, and the groups the latest sign-in sent. Client secrets are reported only as set, missing or unreadable.
+     * @description Returns every OIDC provider with its group mapping, which settings environment variables set, the groups the latest sign-in sent, and whether Umami could fetch its discovery document: ok, failed, or unchecked for a provider whose settings are incomplete. Client secrets are reported only as set, missing or unreadable.
      */
     get: operations['getAdminOidcProviders'];
     put?: never;
@@ -4514,6 +4514,7 @@ export interface operations {
               clientSecret: 'set' | 'missing' | 'unreadable';
               disableProviderLogout: boolean;
               disableSignup: boolean;
+              discovery: 'ok' | 'failed' | 'unchecked';
               discoveryUrl: string;
               groupsClaim: string;
               lastGroups: {
@@ -4622,6 +4623,7 @@ export interface operations {
             clientSecret: 'set' | 'missing' | 'unreadable';
             disableProviderLogout: boolean;
             disableSignup: boolean;
+            discovery: 'ok' | 'failed' | 'unchecked';
             discoveryUrl: string;
             groupsClaim: string;
             lastGroups: {
@@ -4750,6 +4752,7 @@ export interface operations {
             clientSecret: 'set' | 'missing' | 'unreadable';
             disableProviderLogout: boolean;
             disableSignup: boolean;
+            discovery: 'ok' | 'failed' | 'unchecked';
             discoveryUrl: string;
             groupsClaim: string;
             lastGroups: {

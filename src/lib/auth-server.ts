@@ -309,10 +309,13 @@ async function isDiscoverable(provider: OidcProvider) {
   return false;
 }
 
+/** Whether a provider's discovery document arrived when the current instance was built. */
+export type DiscoveryStatus = 'ok' | 'failed';
+
 interface AuthInstance {
   auth: ReturnType<typeof createAuth>;
-  /** Whether a usable provider was left off because its discovery failed. */
-  incomplete: boolean;
+  /** The discovery result of each usable provider, by slug. */
+  discovery: Record<string, DiscoveryStatus>;
   builtAt: number;
 }
 
@@ -323,7 +326,9 @@ async function buildAuth(providers: OidcProvider[]): Promise<AuthInstance> {
 
   return {
     auth: createAuth(reachable),
-    incomplete: reachable.length < usable.length,
+    discovery: Object.fromEntries(
+      usable.map(({ slug }, index) => [slug, discoverable[index] ? 'ok' : 'failed']),
+    ),
     builtAt: Date.now(),
   };
 }
@@ -332,12 +337,7 @@ let current:
   | { providers: OidcProvider[]; instance: Promise<AuthInstance>; retry?: Promise<void> }
   | undefined;
 
-/**
- * The better-auth instance for the current OIDC providers. A change to them builds a new one, which
- * signs nobody out: sessions live in the database. Created on first use, so importing this module
- * does not open a database connection.
- */
-export async function getAuth() {
+async function getInstance() {
   const providers = await getOidcProviders();
 
   if (current?.providers !== providers) {
@@ -349,7 +349,7 @@ export async function getAuth() {
 
   // The instance in use keeps serving while a new one tries the providers left off again.
   if (
-    instance.incomplete &&
+    Object.values(instance.discovery).includes('failed') &&
     !entry.retry &&
     Date.now() - instance.builtAt > DISCOVERY_RETRY_INTERVAL
   ) {
@@ -359,7 +359,24 @@ export async function getAuth() {
     });
   }
 
-  return instance.auth;
+  return instance;
+}
+
+/**
+ * The better-auth instance for the current OIDC providers. A change to them builds a new one, which
+ * signs nobody out: sessions live in the database. Created on first use, so importing this module
+ * does not open a database connection.
+ */
+export async function getAuth() {
+  return (await getInstance()).auth;
+}
+
+/**
+ * The discovery result of each usable provider, by slug. A provider that failed cannot sign anyone
+ * in until a later try fetches its document.
+ */
+export async function getDiscoveryStatuses() {
+  return (await getInstance()).discovery;
 }
 
 /**

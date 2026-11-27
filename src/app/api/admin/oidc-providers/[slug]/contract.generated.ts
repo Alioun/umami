@@ -132,6 +132,19 @@ const operation2 = defineOperation({
                     },
                   ],
                 },
+                discovery: {
+                  anyOf: [
+                    {
+                      const: 'ok',
+                    },
+                    {
+                      const: 'failed',
+                    },
+                    {
+                      const: 'unchecked',
+                    },
+                  ],
+                },
                 lastGroups: {
                   type: 'object',
                   properties: {
@@ -306,6 +319,7 @@ const operation2 = defineOperation({
               },
               required: [
                 'clientSecret',
+                'discovery',
                 'lastGroups',
                 'name',
                 'scopes',

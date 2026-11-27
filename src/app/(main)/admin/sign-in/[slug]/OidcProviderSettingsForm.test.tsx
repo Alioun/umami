@@ -26,6 +26,7 @@ const provider: OidcProviderResponse = {
   mappings: [],
   lockedBy: {},
   stored: true,
+  discovery: 'ok',
   lastGroups: null,
 };
 

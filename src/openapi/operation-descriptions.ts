@@ -46,7 +46,7 @@ export const operationDescriptions: Record<string, OperationDescription> = {
   'GET /api/admin/oidc-providers': {
     summary: 'List OIDC providers',
     description:
-      'Returns every OIDC provider with its group mapping, which settings environment variables set, and the groups the latest sign-in sent. Client secrets are reported only as set, missing or unreadable.',
+      'Returns every OIDC provider with its group mapping, which settings environment variables set, the groups the latest sign-in sent, and whether Umami could fetch its discovery document: ok, failed, or unchecked for a provider whose settings are incomplete. Client secrets are reported only as set, missing or unreadable.',
   },
   'POST /api/admin/oidc-providers': {
     summary: 'Add an OIDC provider',

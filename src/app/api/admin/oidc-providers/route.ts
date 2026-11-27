@@ -1,3 +1,4 @@
+import { getDiscoveryStatuses } from '@/lib/auth-server';
 import { getOidcProvider, getOidcProviders, invalidateOidcProviders } from '@/lib/oidc';
 import {
   oidcProviderSchema,
@@ -25,10 +26,16 @@ export async function GET(request: Request) {
     return unauthorized();
   }
 
-  const [providers, lastGroups] = await Promise.all([getOidcProviders(), getLastGroups()]);
+  const [providers, lastGroups, discovery] = await Promise.all([
+    getOidcProviders(),
+    getLastGroups(),
+    getDiscoveryStatuses(),
+  ]);
 
   return json({
-    providers: providers.map(provider => toProviderResponse(provider, lastGroups[provider.slug])),
+    providers: providers.map(provider =>
+      toProviderResponse(provider, lastGroups[provider.slug], discovery[provider.slug]),
+    ),
   });
 }
 

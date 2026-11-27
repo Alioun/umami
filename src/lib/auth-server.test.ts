@@ -691,12 +691,13 @@ describe('discovery', () => {
     state.providers = [providerRow('hanging', usable), providerRow('authentik', usable)];
     state.discoveryUrls = { hanging: `http://127.0.0.1:${port}/.well-known/openid-configuration` };
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const { getAuth } = await loadAuthServer();
+    const { getAuth, getDiscoveryStatuses } = await loadAuthServer();
 
     const auth = await getAuth();
     const cookie = await createSession('local-user');
 
     expect(await providerIds(auth)).toEqual(['authentik', 'oidc']);
+    expect(await getDiscoveryStatuses()).toMatchObject({ hanging: 'failed', authentik: 'ok' });
     expect(await auth.api.getSession({ headers: new Headers({ cookie }) })).toMatchObject({
       user: { id: 'local-user' },
     });
@@ -708,6 +709,7 @@ describe('discovery', () => {
     await vi.waitFor(async () =>
       expect(await providerIds(await getAuth())).toEqual(['authentik', 'hanging', 'oidc']),
     );
+    expect(await getDiscoveryStatuses()).toMatchObject({ hanging: 'ok', authentik: 'ok' });
     vi.mocked(Date.now).mockRestore();
   }, 20_000);
 });

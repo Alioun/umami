@@ -1,11 +1,12 @@
 'use client';
-import { Column, Text } from '@umami/react-zen';
+import { Alert, AlertDescription, AlertTitle, Column, Text } from '@umami/react-zen';
 import { Empty } from '@/components/common/Empty';
 import { LoadingPanel } from '@/components/common/LoadingPanel';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Panel } from '@/components/common/Panel';
 import { useMessages, useOidcProvidersQuery } from '@/components/hooks';
-import { KeyRound } from '@/components/icons';
+import { AlertTriangle, KeyRound } from '@/components/icons';
+import { OidcProviderStatus } from '../OidcProviderStatus';
 import { OidcGroupMappingsForm } from './OidcGroupMappingsForm';
 import { OidcProviderDeleteButton } from './OidcProviderDeleteButton';
 import { OidcProviderSettingsForm } from './OidcProviderSettingsForm';
@@ -25,13 +26,25 @@ export function OidcProviderPage({ slug }: { slug: string }) {
     >
       {provider && (
         <Column gap="6" margin="2">
-          <PageHeader title={provider.name} description={provider.slug} icon={<KeyRound />}>
+          <PageHeader
+            title={provider.name}
+            titleSuffix={<OidcProviderStatus provider={provider} />}
+            description={provider.slug}
+            icon={<KeyRound />}
+          >
             {/* The provider from the OIDC_* variables stays as long as they are set. */}
             {provider.stored && !Object.keys(provider.lockedBy).length && (
               <OidcProviderDeleteButton provider={provider} />
             )}
           </PageHeader>
           <Panel title={t(labels.settings)} gap="4">
+            {provider.discovery === 'failed' && (
+              <Alert data-test="alert-discovery-failed">
+                <AlertTriangle />
+                <AlertTitle>{t(messages.discoveryFailedTitle)}</AlertTitle>
+                <AlertDescription>{t(messages.discoveryFailed)}</AlertDescription>
+              </Alert>
+            )}
             <OidcProviderSettingsForm provider={provider} />
           </Panel>
           <Panel title={t(labels.groupMappings)} gap="4">

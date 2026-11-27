@@ -482,7 +482,9 @@ export const labels: Record<string, string> = {
   teamRole: 'label.team-role',
   addMapping: 'label.add-mapping',
   status: 'label.status',
-  providerActive: 'label.provider-active',
+  providerReachable: 'label.provider-reachable',
+  providerUnreachable: 'label.provider-unreachable',
+  providerUnchecked: 'label.provider-unchecked',
   providerIncomplete: 'label.provider-incomplete',
   secretUnreadable: 'label.secret-unreadable',
   lastGroups: 'label.last-groups',
@@ -591,4 +593,6 @@ export const messages: Record<string, string> = {
   noLastGroups: 'message.no-last-groups',
   noGroupsSent: 'message.no-groups-sent',
   confirmDeleteProvider: 'message.confirm-delete-provider',
+  discoveryFailedTitle: 'message.discovery-failed-title',
+  discoveryFailed: 'message.discovery-failed',
 };
