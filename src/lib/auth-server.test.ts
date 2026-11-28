@@ -55,6 +55,8 @@ vi.mock('@/lib/prisma', () => {
           data,
         ),
     },
+    // Every team a mapping names exists.
+    team: { findMany: async ({ where }) => where.id.in.map((id: string) => ({ id })) },
     teamUser: {
       findMany: async ({ where }) =>
         state.teamUsers.filter(
